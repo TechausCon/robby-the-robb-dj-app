@@ -24,28 +24,36 @@ Mix, sync und scratche wie ein Pro – alles im Browser mit fetten Visuals und s
 
 <div style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center;">
   <img src="./assets/robby-logo.png" alt="Robby the Robb Logo" width="150" />
-  <img src="./assets/screenshot-main.png" alt="App Screenshot" width="300" />
+  <img src="./assets/screenshot.png" alt="App Screenshot" width="300" />
 </div>
 
 ---
 
 ## Installation
 
-```bash
-git clone https://github.com/deinusername/robby-the-robb-dj-app.git
-cd robby-the-robb-dj-app
+1. Klone das Repository:
+
+   ```bash
+   git clone https://gitlab.robbstock-entertainment.de/Block/robby-the-robb-dj-app.git
+   cd robby-the-robb-dj-app
+
+    Installiere die Abhängigkeiten:
+
 npm install
-npm run dev
+
+Starte die Entwicklungsversion:
+
+    npm run dev
 
 Nutzung
 
-    Musik laden via Drag & Drop oder Button
+    Musik laden via Drag & Drop oder über den Button.
 
-    MIDI Controller verbinden und loslegen
+    MIDI Controller verbinden und loslegen (speziell für Traktor Kontrol S4 MK3).
 
-    KI-Tipps für freshe Mixideen abrufen
+    KI-Tipps für freshe Mixideen abrufen.
 
-    Crossfader, EQ & Filter regeln
+    Crossfader, EQ & Filter regeln, um den perfekten Sound zu kreieren.
 
 Lizenz
 
@@ -53,16 +61,12 @@ MIT License © DJ Robbstock
 Kontakt
 
 Fragen, Wünsche oder Feedback?
-Schick 'ne Mail an robbstock@example.com
-Bilderquellen
-
-    Robby the Robb Logo: Eigenes Design
-
-    App Screenshot: Eigene Entwicklung
-
+Schick 'ne Mail an: support@robbstock-entertainment.de
 Git Setup (kurz)
 
-    Repo erstellen (GitHub oder GitLab)
+    Repo erstellen (GitLab):
+
+        Gehe zu GitLab Repository
 
     Lokal initialisieren und verbinden:
 
@@ -70,9 +74,20 @@ git init
 git add .
 git commit -m "Initial commit: Robby the Robb DJ APP"
 git branch -M main
-git remote add origin https://github.com/deinusername/robby-the-robb-dj-app.git
+git remote add origin https://gitlab.robbstock-entertainment.de/Block/robby-the-robb-dj-app.git
 git push -u origin main
 
-    Von nun an: git add . && git commit -m "Message" && git push
+Von nun an:
+
+    git add .
+    git commit -m "Message"
+    git push
+
+Bilderquellen
+
+    Robby the Robb Logo: Eigenes Design
+
+    App Screenshot: Eigene Entwicklung
 
 Enjoy und viel Spaß beim Robben! 🦭🎶
+

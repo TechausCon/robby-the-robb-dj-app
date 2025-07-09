@@ -1,7 +1,35 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import type { JSX } from 'react';
-import { PlayIcon, PauseIcon, StopCircleIcon, UploadCloudIcon } from 'lucide-react';
-import type { DeckState, Action, Track, DeckId } from '../../../types';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { PlayIcon, PauseIcon, StopCircleIcon, UploadCloudIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
+
+// Annahme der Typ-Definitionen
+type DeckId = 'A' | 'B';
+interface Track {
+  name: string;
+  artist?: string;
+  url: string;
+  bpm?: number;
+  audioBuffer?: AudioBuffer;
+}
+interface DeckState {
+  id: DeckId;
+  track: Track | null;
+  isPlaying: boolean;
+  playbackRate: number;
+  syncedTo: DeckId | null;
+  progress: number;
+  cuePoint: number;
+  volume: number;
+  low: number;
+  mid: number;
+  high: number;
+  filter: number;
+}
+type Action =
+  | { type: 'TOGGLE_PLAY' }
+  | { type: 'SET_PLAYBACK_RATE'; payload: number }
+  | { type: 'SET_PROGRESS'; payload: number }
+  | { type: 'SET_CUE'; payload: number }
+  | { type: 'JUMP_TO_CUE' };
 
 interface DeckProps {
   deckState: DeckState;
@@ -11,50 +39,83 @@ interface DeckProps {
   onLoadTrack: (file: File) => void;
   audioContext: AudioContext | null;
   onToggleSync: () => void;
+  onTogglePlay: () => void; // NEU: Direkte Funktion zum Starten der Wiedergabe
   loadingMessage: string | null;
 }
 
-const WaveformDisplay = ({ audioBuffer, progress, trackLoaded, deckId, loadingMessage }: { audioBuffer?: AudioBuffer, progress: number, trackLoaded: boolean, deckId: DeckId, loadingMessage: string | null }): JSX.Element => {
+// Waveform-Component
+const WaveformDisplay = ({
+  audioBuffer,
+  progress,
+  trackLoaded,
+  deckId,
+  loadingMessage,
+  zoom,
+}: {
+  audioBuffer?: AudioBuffer;
+  progress: number;
+  trackLoaded: boolean;
+  deckId: DeckId;
+  loadingMessage: string | null;
+  zoom: number;
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playheadColor = deckId === 'A' ? '#3b82f6' : '#f97316';
-  
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !audioBuffer) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
+
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
     ctx.scale(dpr, dpr);
+
     const width = canvas.width / dpr;
     const height = canvas.height / dpr;
     ctx.clearRect(0, 0, width, height);
 
-    if (!audioBuffer) return;
-
     const data = audioBuffer.getChannelData(0);
+    const totalSamples = data.length;
     const centerY = height / 2;
-    const samplesPerPixel = Math.floor(data.length / width);
-    const progressInPixels = width * (progress / 100);
+    const playheadX = width / 2;
+    const currentSample = Math.floor(totalSamples * (progress / 100));
+    const visibleSamples = totalSamples / zoom;
+    const startSample = Math.max(0, currentSample - (visibleSamples * (playheadX / width)));
+    const samplesPerPixel = visibleSamples / width;
+
     for (let i = 0; i < width; i++) {
-      const start = i * samplesPerPixel;
-      const end = start + samplesPerPixel;
-      let min = 1.0; let max = -1.0;
-      for (let j = start; j < end; j++) {
+      const sampleStartIndex = Math.floor(startSample + (i * samplesPerPixel));
+      const sampleEndIndex = Math.floor(sampleStartIndex + samplesPerPixel);
+      if (sampleStartIndex >= totalSamples) continue;
+
+      let min = 1.0;
+      let max = -1.0;
+      for (let j = sampleStartIndex; j < sampleEndIndex; j++) {
+        if (j < 0 || j >= totalSamples) continue;
         const sample = data[j];
         if (sample < min) min = sample;
         if (sample > max) max = sample;
       }
+      if (min === 1.0 && max === -1.0) { min = 0; max = 0; }
+
       const yMax = (1 - max) * centerY;
       const yMin = (1 - min) * centerY;
       const barHeight = Math.max(1, yMin - yMax);
-      ctx.fillStyle = i < progressInPixels ? playheadColor : '#4b5563';
+      const hue = (sampleStartIndex / totalSamples) * 360;
+      ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
       ctx.fillRect(i, yMax, 1, barHeight);
     }
-  }, [audioBuffer, progress, playheadColor]);
+
+    ctx.fillStyle = playheadColor;
+    ctx.fillRect(playheadX - 1, 0, 2, height);
+  }, [audioBuffer, progress, playheadColor, zoom]);
 
   return (
     <div className="h-20 bg-gray-700 rounded-lg overflow-hidden relative select-none">
@@ -72,8 +133,19 @@ const WaveformDisplay = ({ audioBuffer, progress, trackLoaded, deckId, loadingMe
   );
 };
 
-export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, audioContext, onToggleSync, loadingMessage }: DeckProps): JSX.Element => {
-  const { id, track, isPlaying, playbackRate, syncedTo, progress, cuePoint, volume, low, mid, high, filter } = deckState;
+
+// Haupt-Deck-Komponente
+export const Deck = React.memo(({
+  deckState,
+  dispatch,
+  audioRef,
+  crossfader,
+  onLoadTrack,
+  audioContext,
+  onToggleSync,
+  onTogglePlay, // NEU
+  loadingMessage,
+}: DeckProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const lowShelfRef = useRef<BiquadFilterNode | null>(null);
@@ -82,6 +154,25 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
   const filterRef = useRef<BiquadFilterNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const isAudioGraphSetup = useRef(false);
+  
+  const [zoom, setZoom] = useState(25);
+
+  if (!deckState) {
+    return (
+      <div className="bg-gray-800 p-4 rounded-lg border border-gray-700/50 flex space-x-4 text-white items-center justify-center">
+        Deck wird geladen...
+      </div>
+    );
+  }
+
+  const { id, track, isPlaying, playbackRate, syncedTo, progress, cuePoint, volume, low, mid, high, filter } = deckState;
+
+  const handleZoomIn = () => { if (zoom < 50) setZoom(prevZoom => prevZoom * 1.2); };
+  const handleZoomOut = () => { if (zoom > 2) setZoom(prevZoom => prevZoom / 1.2); };
+  const handleTempoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTempo = parseFloat(e.target.value);
+    dispatch({ type: 'SET_PLAYBACK_RATE', payload: newTempo });
+  };
   
   useEffect(() => {
     if (!audioContext || !audioRef.current || isAudioGraphSetup.current) return;
@@ -111,20 +202,7 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !audioContext) return;
-    if (isPlaying) {
-      audioContext.resume();
-      audio.play().catch(e => console.error("Audio play failed:", e));
-    } else {
-      audio.pause();
-    }
-  }, [isPlaying, audioRef, audioContext]);
- 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.playbackRate = playbackRate;
-    }
+    if (audio) { audio.playbackRate = playbackRate; }
   }, [playbackRate, audioRef]);
 
   useEffect(() => {
@@ -134,15 +212,15 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
       gainNodeRef.current.gain.setTargetAtTime(gainValue, audioContext.currentTime, 0.01);
     }
   }, [volume, crossfader, calculateGain, audioContext]);
-  
+
   useEffect(() => {
     if (!audioContext) return;
     const valueToDb = (v: number) => (v - 50) * 0.4;
-    if(lowShelfRef.current) lowShelfRef.current.gain.setTargetAtTime(valueToDb(low), audioContext.currentTime, 0.01);
-    if(midPeakingRef.current) midPeakingRef.current.gain.setTargetAtTime(valueToDb(mid), audioContext.currentTime, 0.01);
-    if(highShelfRef.current) highShelfRef.current.gain.setTargetAtTime(valueToDb(high), audioContext.currentTime, 0.01);
+    if (lowShelfRef.current) lowShelfRef.current.gain.setTargetAtTime(valueToDb(low), audioContext.currentTime, 0.01);
+    if (midPeakingRef.current) midPeakingRef.current.gain.setTargetAtTime(valueToDb(mid), audioContext.currentTime, 0.01);
+    if (highShelfRef.current) highShelfRef.current.gain.setTargetAtTime(valueToDb(high), audioContext.currentTime, 0.01);
   }, [low, mid, high, audioContext]);
-  
+
   useEffect(() => {
     if (!filterRef.current || !audioContext) return;
     const node = filterRef.current;
@@ -160,13 +238,6 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
       node.frequency.setTargetAtTime(minFreq * Math.pow(maxFreq / minFreq, (v - 51) / 49), audioContext.currentTime, 0.01);
     }
   }, [filter, audioContext]);
-
-  const handleTimeUpdate = () => {
-    const audio = audioRef.current;
-    if (audio && audio.duration) {
-      dispatch({ type: 'SET_PROGRESS', payload: (audio.currentTime / audio.duration) * 100 });
-    }
-  };
 
   const handleCue = () => {
     const audio = audioRef.current;
@@ -186,25 +257,20 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
       }
     }
   }, [deckState.isPlaying, deckState.cuePoint, audioRef]);
-  
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       onLoadTrack(e.target.files[0]);
     }
   };
 
-  const handlePitchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newRate = parseFloat(e.target.value);
-    dispatch({ type: 'SET_PLAYBACK_RATE', payload: newRate });
-  };
-  
   const formatTime = (seconds: number) => {
     if (isNaN(seconds) || seconds === Infinity) return '00:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
-  
+
   const trackTitle = loadingMessage ? ' ' : (track?.artist ? `${track.artist} - ${track.name}` : track?.name || 'No Track Loaded');
   const displayBpm = track?.bpm ? (Number(track.bpm) * playbackRate).toFixed(1) : null;
   const isSynced = syncedTo !== null;
@@ -212,7 +278,7 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
 
   return (
     <div className="bg-gray-800 p-4 rounded-lg border border-gray-700/50 flex space-x-4">
-      <audio ref={audioRef} src={track?.url} onTimeUpdate={handleTimeUpdate} onEnded={() => dispatch({ type: 'TOGGLE_PLAY' })} crossOrigin="anonymous"/>
+      <audio ref={audioRef} src={track?.url} onEnded={() => dispatch({ type: 'TOGGLE_PLAY' })} crossOrigin="anonymous"/>
       <input type="file" accept="audio/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
       <div className="flex-grow flex flex-col space-y-4">
@@ -230,11 +296,29 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
           </div>
         </div>
         
-        <WaveformDisplay audioBuffer={track?.audioBuffer} progress={progress} trackLoaded={!!track} deckId={id} loadingMessage={loadingMessage}/>
-        
+        <div className="relative">
+            <WaveformDisplay audioBuffer={track?.audioBuffer} progress={progress} trackLoaded={!!track} deckId={id} loadingMessage={loadingMessage} zoom={zoom}/>
+            <div className="absolute top-1 right-1 flex space-x-1 z-20">
+                <button
+                  onClick={handleZoomOut}
+                  className="w-7 h-7 rounded-md bg-gray-900/50 hover:bg-gray-900/80 text-white flex items-center justify-center transition-colors"
+                  title="Zoom Out"
+                >
+                  <ZoomOutIcon size={16} />
+                </button>
+                <button
+                  onClick={handleZoomIn}
+                  className="w-7 h-7 rounded-md bg-gray-900/50 hover:bg-gray-900/80 text-white flex items-center justify-center transition-colors"
+                  title="Zoom In"
+                >
+                  <ZoomInIcon size={16} />
+                </button>
+            </div>
+        </div>
+
         <div className="flex items-center justify-around">
           <button
-            onClick={() => dispatch({ type: 'TOGGLE_PLAY' })}
+            onClick={onTogglePlay} // KORREKTUR: Ruft die neue Funktion von App.jsx auf
             disabled={!track}
             className="p-3 bg-gray-700 rounded-full text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
           >
@@ -266,20 +350,22 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
       </div>
 
       <div className="flex flex-col items-center justify-center w-16">
-        <input
-          type="range"
-          min="0.92"
-          max="1.08"
-          step="0.001"
-          value={playbackRate}
-          onChange={handlePitchChange}
-          className="w-40 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer -rotate-90"
-          disabled={!track}
-        />
-        <span className="mt-4 text-xs font-mono text-gray-400">
+        <div className="flex flex-col items-center" style={{height: '200px'}}>
+             <input
+                type="range"
+                min="0.92"
+                max="1.08"
+                step="0.001"
+                value={playbackRate}
+                onChange={handleTempoChange}
+                className="w-40 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer origin-center -rotate-90 mt-24"
+                disabled={!track}
+              />
+        </div>
+        <span className="text-xs font-mono text-gray-400 mt-2">
           {((playbackRate - 1) * 100).toFixed(1)}%
         </span>
       </div>
     </div>
   );
-};
+});

@@ -1,0 +1,86 @@
+/* Slider Container */
+.tempo-fader-vertical {
+  -webkit-appearance: none; /* Für Webkit-Browser */
+  appearance: none; /* Für alle modernen Browser */
+  width: 30px; /* Breite des Sliders */
+  height: 150px; /* Höhe des Sliders */
+  background: #1f2937; /* Dunkle Hintergrundfarbe */
+  border-radius: 10px; /* Abgerundete Ecken */
+  cursor: pointer; /* Zeiger-Cursor beim Überfahren */
+  writing-mode: bt-lr; /* Vertikale Richtung: Bottom to Top */
+}
+
+/* Thumb-Stil (Der Daumen des Sliders) */
+.tempo-fader-vertical::-webkit-slider-thumb {
+  -webkit-appearance: none; /* Entfernen der Standard-Darstellung */
+  appearance: none; /* Entfernen der Standard-Darstellung */
+  width: 30px; /* Breite des Daumens */
+  height: 24px; /* Höhe des Daumens */
+  border-radius: 6px; /* Abgerundete Ecken */
+  border: 2px solid; /* Rand des Daumens */
+  cursor: pointer; /* Zeiger-Cursor */
+  margin-top: -8px; /* Positionierung des Daumens in der Mitte des Sliders */
+  transition: background-color 0.3s ease; /* Sanfte Übergänge bei Hover */
+}
+
+/* Deck A - Blau */
+.tempo-fader-vertical:not(.deck-b)::-webkit-slider-thumb {
+  background: #3b82f6; /* Blau für Deck A */
+  border-color: #2563eb; /* Dunkleres Blau für den Rand */
+}
+.tempo-fader-vertical:not(.deck-b)::-webkit-slider-thumb:hover {
+  background: #60a5fa; /* Helleres Blau bei Hover */
+}
+
+/* Deck B - Orange */
+.tempo-fader-vertical.deck-b::-webkit-slider-thumb {
+  background: #f97316; /* Orange für Deck B */
+  border-color: #ea580c; /* Dunkleres Orange für den Rand */
+}
+.tempo-fader-vertical.deck-b::-webkit-slider-thumb:hover {
+  background: #fb923c; /* Hellorange bei Hover */
+}
+
+/* Firefox */
+.tempo-fader-vertical::-moz-range-thumb {
+  width: 30px; /* Breite des Daumens */
+  height: 24px; /* Höhe des Daumens */
+  border-radius: 6px; /* Abgerundete Ecken */
+  border: 2px solid; /* Rand des Daumens */
+  cursor: pointer; /* Zeiger-Cursor */
+  transition: background-color 0.3s ease; /* Sanfte Übergänge bei Hover */
+}
+
+.tempo-fader-vertical:not(.deck-b)::-moz-range-thumb {
+  background: #3b82f6; /* Blau für Deck A */
+  border-color: #2563eb; /* Dunkleres Blau für den Rand */
+}
+.tempo-fader-vertical:not(.deck-b)::-moz-range-thumb:hover {
+  background: #60a5fa; /* Helleres Blau bei Hover */
+}
+
+.tempo-fader-vertical.deck-b::-moz-range-thumb {
+  background: #f97316; /* Orange für Deck B */
+  border-color: #ea580c; /* Dunkleres Orange für den Rand */
+}
+.tempo-fader-vertical.deck-b::-moz-range-thumb:hover {
+  background: #fb923c; /* Hellorange bei Hover */
+}
+
+/* Zusatz-Stile für das allgemeine Layout */
+.tempo-fader-vertical {
+  transition: height 0.2s ease; /* Glatter Übergang bei der Größenänderung */
+}
+
+/* Slider Range-Optionen */
+input[type="range"] {
+  -webkit-appearance: none; /* Entfernen der Standard-Stile für Webkit-Browser */
+  appearance: none; /* Entfernen der Standard-Stile für andere Browser */
+  width: 100%; /* Volle Breite */
+  background: transparent; /* Transparentes Hintergrund */
+}
+
+/* Position des Daumens am Anfang (wird dynamisch durch den Fader-Wert bestimmt) */
+input[type="range"]:disabled {
+  cursor: not-allowed; /* Zeigt den nicht erlaubten Cursor */
+}

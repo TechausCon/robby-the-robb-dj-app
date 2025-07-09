@@ -1,44 +1,37 @@
-# Definiere die verschiedenen Phasen deiner Pipeline
 stages:
   - install
   - build
   - test
-  - deploy
 
-# Installiere Node.js, Abhängigkeiten und führe Tests durch
+# Installiere alle Abhängigkeiten
 install_dependencies:
   stage: install
-  image: node:16  # Verwende das Node.js Docker-Image
+  image: node:16
   script:
-    - npm ci  # Verwendet "npm ci", um die Abhängigkeiten aus der package-lock.json zu installieren
-  cache:
-    paths:
-      - node_modules/  # Cacht node_modules, damit die Abhängigkeiten nicht bei jedem Lauf neu installiert werden
-
-# Baue die Anwendung (wenn du eine Build-Umgebung benötigst, wie Webpack)
-build:
-  stage: build
-  script:
-    - npm run build  # Führt den Build-Befehl aus, der in deiner package.json definiert ist
-  artifacts:
-    paths:
-      - build/  # Speichert die Build-Ergebnisse als Artefakte für späteres Deploy
-
-# Führe Tests aus (falls du Tests definiert hast)
-test:
-  stage: test
-  script:
-    - npm test  # Führt deine Tests aus, die in package.json definiert sind
-  artifacts:
-    paths:
-      - test-reports/  # Speichert Testberichte als Artefakte (optional)
-
-# Deployment (optional, falls du die Anwendung deployen möchtest)
-deploy:
-  stage: deploy
-  script:
-    - echo "Deploying to production server..."  # Beispiel für das Deployment-Skript
-    # Hier kannst du dein tatsächliches Deployment-Skript einfügen
-    # Zum Beispiel: scp build/* user@server:/path/to/deploy
+    - npm install  # Installiert alle Projekt-Abhängigkeiten
   only:
-    - master  # Nur auf dem Master-Branch wird deployt
+    - master  # Diese Pipeline wird nur für Pushes auf den Master-Branch ausgeführt
+
+# Baue das Projekt (z.B. Transpiliere TypeScript, Bundle JS, etc.)
+build_app:
+  stage: build
+  image: node:16
+  script:
+    - npm run build  # Führt den Build-Prozess aus (z.B. mit Webpack oder einem anderen Bundler)
+  only:
+    - master  # Wird nur auf den Master-Branch angewendet
+
+# Teste die Anwendung
+test_app:
+  stage: test
+  image: node:16
+  script:
+    - npm run test  # Führt Tests durch, die mit npm installierten Test-Frameworks konfiguriert sind
+  only:
+    - master  # Wird nur auf den Master-Branch angewendet
+
+# GitLab CI/CD Tokens und API-Setup für den Test
+# GitLab API Token und Projekt ID werden als Umgebungsvariablen gesetzt, wenn nötig.
+variables:
+  CI_PROJECT_ID: "1"  # Dies ist die Projekt-ID, die in GitLab zu deinem Projekt gehört
+  CI_API_TOKEN: "${CI_JOB_TOKEN}"  # Das CI Job Token für den API-Zugang

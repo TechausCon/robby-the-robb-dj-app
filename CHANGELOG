@@ -1,0 +1,20 @@
+# Changelog
+
+Alle relevanten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
+
+## [Unreleased]
+### Hinzugefügt
+- Grundlegende DJ-Performance-App mit zwei Decks und Waveform-Visualisierung.
+- MIDI-Integration für Traktor Kontrol S4 MK3.
+- KI-basierte DJ-Tipps mit der Google Gemini API.
+- Musikbibliothek mit Drag & Drop-Unterstützung.
+- BPM-Analyse und Beatgrid-Erkennung.
+
+### Geändert
+- UI-Optimierungen und Performance-Verbesserungen.
+
+## [0.1.1] - 2025-07-09
+### Hinzugefügt
+- Erste Prototyp-Version der DJ-App.
+- Grundlegende Funktionen: Decks, Player, Play/Pause, Crossfader.
+- Grundlegende Benutzeroberfläche und Navigation.

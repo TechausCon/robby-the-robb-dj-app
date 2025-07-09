@@ -1,4 +1,4 @@
-import { MidiMessage, DeckId } from '../types';
+import { MidiMessage, DeckId } from '../../types';
 
 // MIDI Command Constants
 const NOTE_ON = 0x90;

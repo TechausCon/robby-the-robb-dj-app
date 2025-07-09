@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { MusicIcon, FolderPlusIcon } from 'lucide-react';
-import type { DeckId, Track } from '../types';
+import type { DeckId, Track } from '../../types';
 
 interface FileExplorerProps {
   library: File[];

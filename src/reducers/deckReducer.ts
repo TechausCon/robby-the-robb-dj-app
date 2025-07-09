@@ -1,4 +1,4 @@
-import { DeckState, Action } from '../types';
+import { DeckState, Action } from '../../types';
 
 export const deckReducer = (state: DeckState, action: Action): DeckState => {
   switch (action.type) {

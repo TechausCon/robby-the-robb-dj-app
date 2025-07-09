@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { MidiMessage } from '../types';
+import { MidiMessage } from '../../types';
 
 export const useMidi = () => {
   const [midiDeviceName, setMidiDeviceName] = useState<string | null>(null);

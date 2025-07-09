@@ -1,7 +1,7 @@
 import React from 'react';
-import { DeckState, Action } from '../types';
-import { Knob } from './ui/Knob';
-import { Fader } from './ui/Fader';
+import { DeckState, Action } from '../../../types';
+import { Knob } from '../ui/Knob';
+import { Fader } from '../ui/Fader';
 
 interface MixerProps {
   deckAState: DeckState;

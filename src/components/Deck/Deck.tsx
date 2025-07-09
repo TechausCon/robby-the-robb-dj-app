@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
+import type { JSX } from 'react';
 import { PlayIcon, PauseIcon, StopCircleIcon, UploadCloudIcon } from 'lucide-react';
-import type { DeckState, Action, Track, DeckId } from '../types';
+import type { DeckState, Action, Track, DeckId } from '../../../types';
 
 interface DeckProps {
   deckState: DeckState;
@@ -214,7 +215,6 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
       <audio ref={audioRef} src={track?.url} onTimeUpdate={handleTimeUpdate} onEnded={() => dispatch({ type: 'TOGGLE_PLAY' })} crossOrigin="anonymous"/>
       <input type="file" accept="audio/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
-      {/* Haupt-Deck-Steuerung */}
       <div className="flex-grow flex flex-col space-y-4">
         <div className="flex justify-between items-start">
           <h2 className={`text-2xl font-bold ${id === 'A' ? 'text-blue-400' : 'text-orange-400'}`}>DECK {id}</h2>
@@ -233,4 +233,53 @@ export const Deck = ({ deckState, dispatch, audioRef, crossfader, onLoadTrack, a
         <WaveformDisplay audioBuffer={track?.audioBuffer} progress={progress} trackLoaded={!!track} deckId={id} loadingMessage={loadingMessage}/>
         
         <div className="flex items-center justify-around">
-          <button onClick={() => dispatch({ type: 'TOGGLE_PLAY' })} disabled={!track} className="p-3 bg-gray-700 rounded-full text-white disabled:opacity-30 disabled:cursor-not-_
+          <button
+            onClick={() => dispatch({ type: 'TOGGLE_PLAY' })}
+            disabled={!track}
+            className="p-3 bg-gray-700 rounded-full text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
+          >
+            {isPlaying ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
+          </button>
+          <button
+            onClick={handleCue}
+            disabled={!track}
+            className="p-3 bg-gray-700 rounded-full text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
+          >
+            <StopCircleIcon size={20} />
+          </button>
+          <button
+            onClick={onToggleSync}
+            disabled={!track}
+            className={`p-3 px-4 rounded-full text-white disabled:opacity-30 transition-colors ${syncButtonColor}`}
+          >
+            <span className="text-xs font-bold">SYNC</span>
+          </button>
+        </div>
+
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full mt-2 py-2 px-4 bg-cyan-600/20 text-cyan-300 rounded-md flex items-center justify-center space-x-2 hover:bg-cyan-600/40 transition-colors"
+        >
+          <UploadCloudIcon size={16} />
+          <span>Load Track</span>
+        </button>
+      </div>
+
+      <div className="flex flex-col items-center justify-center w-16">
+        <input
+          type="range"
+          min="0.92"
+          max="1.08"
+          step="0.001"
+          value={playbackRate}
+          onChange={handlePitchChange}
+          className="w-40 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer -rotate-90"
+          disabled={!track}
+        />
+        <span className="mt-4 text-xs font-mono text-gray-400">
+          {((playbackRate - 1) * 100).toFixed(1)}%
+        </span>
+      </div>
+    </div>
+  );
+};

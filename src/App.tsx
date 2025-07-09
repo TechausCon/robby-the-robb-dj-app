@@ -5,13 +5,13 @@ import { MidiIndicator } from './components/MidiIndicator';
 import { AITip } from './components/AITip';
 import { FileExplorer } from './components/FileExplorer';
 import { useMidi } from './hooks/useMidi';
-import type { DeckState, Action, DeckId, Track } from './types';
+import type { DeckState, Action, DeckId, Track } from '../types';
 import { deckReducer } from './reducers/deckReducer';
 import { findActionForMidiMessage } from './services/midiMap';
 import { getDjTip } from './services/geminiService';
 import analyzeBpm from 'bpm-detective';
 import jsmediatags from 'jsmediatags';
-import RobbyLogo from './assets/robby-logo.png';
+import RobbyLogo from '../assets/robby-logo.png';
 
 async function getAccurateBeatGrid(audioBuffer: AudioBuffer, bpm: number): Promise<number[]> {
   const offlineContext = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);

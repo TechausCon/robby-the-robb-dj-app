@@ -1,13 +1,27 @@
 export type DeckId = 'A' | 'B';
 
+// NEU: Definition für ein MIDI-Mapping-Objekt
+export interface MidiMapping {
+  [key: string]: {
+    action: string;
+    deckId?: DeckId;
+  };
+}
+
 export interface Track {
-  name: string;
-  url: string;
-  artist?: string;
-  // KORREKTUR: BPM ist jetzt immer eine Zahl, um Typ-Konflikte zu vermeiden.
-  bpm?: number;
-  audioBuffer?: AudioBuffer;
-  beatGrid?: number[];
+  id: string; 
+  name: string;
+  url: string;
+  artist?: string;
+  album?: string;
+  year?: string;
+  genre?: string;
+  initialKey?: string;
+  bpm?: number;
+  duration?: number;
+  coverArt?: string;
+  audioBuffer?: AudioBuffer;
+  beatGrid?: number[];
 }
 
 export interface DeckState {

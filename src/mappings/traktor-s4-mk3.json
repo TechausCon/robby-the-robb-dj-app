@@ -1,0 +1,24 @@
+{
+  "name": "Traktor Kontrol S4 MK3 (Default)",
+  "mapping": {
+    "144-0-35": { "action": "TOGGLE_PLAY", "deckId": "A" },
+    "144-0-36": { "action": "SET_CUE", "deckId": "A" },
+    "128-0-36": { "action": "JUMP_TO_CUE", "deckId": "A" },
+    "176-0-9": { "action": "SET_VOLUME", "deckId": "A" },
+    "176-0-32": { "action": "JOG_WHEEL", "deckId": "A" },
+    "176-0-15": { "action": "SET_HIGH", "deckId": "A" },
+    "176-0-16": { "action": "SET_MID", "deckId": "A" },
+    "176-0-17": { "action": "SET_LOW", "deckId": "A" },
+    "176-0-18": { "action": "SET_FILTER", "deckId": "A" },
+    "144-1-35": { "action": "TOGGLE_PLAY", "deckId": "B" },
+    "144-1-36": { "action": "SET_CUE", "deckId": "B" },
+    "128-1-36": { "action": "JUMP_TO_CUE", "deckId": "B" },
+    "176-1-9": { "action": "SET_VOLUME", "deckId": "B" },
+    "176-1-32": { "action": "JOG_WHEEL", "deckId": "B" },
+    "176-1-15": { "action": "SET_HIGH", "deckId": "B" },
+    "176-1-16": { "action": "SET_MID", "deckId": "B" },
+    "176-1-17": { "action": "SET_LOW", "deckId": "B" },
+    "176-1-18": { "action": "SET_FILTER", "deckId": "B" },
+    "176-0-8": { "action": "SET_CROSSFADER" }
+  }
+}

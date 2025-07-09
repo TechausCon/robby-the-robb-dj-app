@@ -39,7 +39,7 @@ interface DeckProps {
   onLoadTrack: (file: File) => void;
   audioContext: AudioContext | null;
   onToggleSync: () => void;
-  onTogglePlay: () => void; // NEU: Direkte Funktion zum Starten der Wiedergabe
+  onTogglePlay: () => void;
   loadingMessage: string | null;
 }
 
@@ -143,7 +143,7 @@ export const Deck = React.memo(({
   onLoadTrack,
   audioContext,
   onToggleSync,
-  onTogglePlay, // NEU
+  onTogglePlay,
   loadingMessage,
 }: DeckProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,7 +156,7 @@ export const Deck = React.memo(({
   const isAudioGraphSetup = useRef(false);
   
   const [zoom, setZoom] = useState(25);
-
+  
   if (!deckState) {
     return (
       <div className="bg-gray-800 p-4 rounded-lg border border-gray-700/50 flex space-x-4 text-white items-center justify-center">
@@ -277,95 +277,115 @@ export const Deck = React.memo(({
   const syncButtonColor = isSynced ? (id === 'A' ? 'bg-blue-500 hover:bg-blue-400' : 'bg-orange-500 hover:bg-orange-400') : 'bg-gray-700 hover:bg-gray-600';
 
   return (
-    <div className="bg-gray-800 p-4 rounded-lg border border-gray-700/50 flex space-x-4">
-      <audio ref={audioRef} src={track?.url} onEnded={() => dispatch({ type: 'TOGGLE_PLAY' })} crossOrigin="anonymous"/>
-      <input type="file" accept="audio/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+    <>
+      <style>{`
+        .pitch-fader {
+          -webkit-appearance: slider-vertical;
+          writing-mode: lr-tb; /* Fix für vertikale Ausrichtung */
+          accent-color: ${id === 'A' ? '#3b82f6' : '#f97316'};
+          cursor: ns-resize;
+        }
+      `}</style>
+      <div className="bg-gray-800 p-4 rounded-lg border border-gray-700/50 flex space-x-4 h-full">
+        <audio ref={audioRef} src={track?.url} onEnded={() => dispatch({ type: 'TOGGLE_PLAY' })} crossOrigin="anonymous"/>
+        <input type="file" accept="audio/*" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
 
-      <div className="flex-grow flex flex-col space-y-4">
-        <div className="flex justify-between items-start">
-          <h2 className={`text-2xl font-bold ${id === 'A' ? 'text-blue-400' : 'text-orange-400'}`}>DECK {id}</h2>
-          <div className="text-right">
-            <p className="text-sm font-semibold truncate max-w-48 h-5" title={trackTitle}>{trackTitle}</p>
-            <div className="text-xs text-gray-400 flex justify-end space-x-2 items-center">
-              <span className="font-bold text-base text-gray-200 w-16 text-right">
-                {displayBpm ? displayBpm : "--.-"}
-              </span>
-              <span>BPM</span>
-              <span>{formatTime(audioRef.current?.currentTime || 0)} / {formatTime(audioRef.current?.duration || 0)}</span>
+        <div className="flex-grow flex flex-col space-y-4">
+          <div className="flex justify-between items-start">
+            <h2 className={`text-2xl font-bold ${id === 'A' ? 'text-blue-400' : 'text-orange-400'}`}>DECK {id}</h2>
+            <div className="text-right">
+              <p className="text-sm font-semibold truncate max-w-48 h-5" title={trackTitle}>{trackTitle}</p>
+              <div className="text-xs text-gray-400 flex justify-end space-x-2 items-center">
+                <span className="font-bold text-base text-gray-200 w-16 text-right">
+                  {displayBpm ? displayBpm : "--.-"}
+                </span>
+                <span>BPM</span>
+                <span>{formatTime(audioRef.current?.currentTime || 0)} / {formatTime(audioRef.current?.duration || 0)}</span>
+              </div>
             </div>
           </div>
+          
+          <div className="relative">
+              <WaveformDisplay audioBuffer={track?.audioBuffer} progress={progress} trackLoaded={!!track} deckId={id} loadingMessage={loadingMessage} zoom={zoom}/>
+              <div className="absolute top-1 right-1 flex space-x-1 z-20">
+                  <button
+                    onClick={handleZoomOut}
+                    className="w-7 h-7 rounded-md bg-gray-900/50 hover:bg-gray-900/80 text-white flex items-center justify-center transition-colors"
+                    title="Zoom Out"
+                  >
+                    <ZoomOutIcon size={16} />
+                  </button>
+                  <button
+                    onClick={handleZoomIn}
+                    className="w-7 h-7 rounded-md bg-gray-900/50 hover:bg-gray-900/80 text-white flex items-center justify-center transition-colors"
+                    title="Zoom In"
+                  >
+                    <ZoomInIcon size={16} />
+                  </button>
+              </div>
+          </div>
+
+          <div className="flex items-center justify-around">
+            <button
+              onClick={onTogglePlay}
+              disabled={!track}
+              className="p-3 bg-gray-700 rounded-full text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
+            >
+              {isPlaying ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
+            </button>
+            <button
+              onClick={handleCue}
+              disabled={!track}
+              className="p-3 bg-gray-700 rounded-full text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
+            >
+              <StopCircleIcon size={20} />
+            </button>
+            <button
+              onClick={onToggleSync}
+              disabled={!track}
+              className={`p-3 px-4 rounded-full text-white disabled:opacity-30 transition-colors ${syncButtonColor}`}
+            >
+              <span className="text-xs font-bold">SYNC</span>
+            </button>
+          </div>
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full mt-2 py-2 px-4 bg-cyan-600/20 text-cyan-300 rounded-md flex items-center justify-center space-x-2 hover:bg-cyan-600/40 transition-colors"
+          >
+            <UploadCloudIcon size={16} />
+            <span>Load Track</span>
+          </button>
         </div>
-        
-        <div className="relative">
-            <WaveformDisplay audioBuffer={track?.audioBuffer} progress={progress} trackLoaded={!!track} deckId={id} loadingMessage={loadingMessage} zoom={zoom}/>
-            <div className="absolute top-1 right-1 flex space-x-1 z-20">
-                <button
-                  onClick={handleZoomOut}
-                  className="w-7 h-7 rounded-md bg-gray-900/50 hover:bg-gray-900/80 text-white flex items-center justify-center transition-colors"
-                  title="Zoom Out"
-                >
-                  <ZoomOutIcon size={16} />
-                </button>
-                <button
-                  onClick={handleZoomIn}
-                  className="w-7 h-7 rounded-md bg-gray-900/50 hover:bg-gray-900/80 text-white flex items-center justify-center transition-colors"
-                  title="Zoom In"
-                >
-                  <ZoomInIcon size={16} />
-                </button>
+
+        {/* KORREKTUR: Überarbeitetes Layout für den Pitchfader */}
+        <div className="flex flex-col items-center w-16 h-full justify-between py-4">
+            <span className="text-xs text-gray-400 font-semibold">+8%</span>
+            <div className="relative flex-1 w-full my-2 flex justify-center items-center">
+                {/* Visuelle Schiene */}
+                <div className="w-1.5 h-full bg-gray-900 rounded-full absolute">
+                    {/* Mittenmarkierung */}
+                    <div className="h-0.5 w-4 bg-gray-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+                </div>
+                <input
+                    type="range"
+                    min="0.92" // Korrekte Reihenfolge für vertikale Logik
+                    max="1.08"
+                    step="0.0005"
+                    value={playbackRate}
+                    onChange={handleTempoChange}
+                    className="pitch-fader h-full w-8"
+                    disabled={!track}
+                />
+            </div>
+            <span className="text-xs text-gray-400 font-semibold">-8%</span>
+            <div className="h-6 flex items-center">
+                <span className="font-mono text-sm font-bold text-gray-300 tabular-nums">
+                    {((playbackRate - 1) * 100).toFixed(2)}%
+                </span>
             </div>
         </div>
-
-        <div className="flex items-center justify-around">
-          <button
-            onClick={onTogglePlay} // KORREKTUR: Ruft die neue Funktion von App.jsx auf
-            disabled={!track}
-            className="p-3 bg-gray-700 rounded-full text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
-          >
-            {isPlaying ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
-          </button>
-          <button
-            onClick={handleCue}
-            disabled={!track}
-            className="p-3 bg-gray-700 rounded-full text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
-          >
-            <StopCircleIcon size={20} />
-          </button>
-          <button
-            onClick={onToggleSync}
-            disabled={!track}
-            className={`p-3 px-4 rounded-full text-white disabled:opacity-30 transition-colors ${syncButtonColor}`}
-          >
-            <span className="text-xs font-bold">SYNC</span>
-          </button>
-        </div>
-
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="w-full mt-2 py-2 px-4 bg-cyan-600/20 text-cyan-300 rounded-md flex items-center justify-center space-x-2 hover:bg-cyan-600/40 transition-colors"
-        >
-          <UploadCloudIcon size={16} />
-          <span>Load Track</span>
-        </button>
       </div>
-
-      <div className="flex flex-col items-center justify-center w-16">
-        <div className="flex flex-col items-center" style={{height: '200px'}}>
-             <input
-                type="range"
-                min="0.92"
-                max="1.08"
-                step="0.001"
-                value={playbackRate}
-                onChange={handleTempoChange}
-                className="w-40 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer origin-center -rotate-90 mt-24"
-                disabled={!track}
-              />
-        </div>
-        <span className="text-xs font-mono text-gray-400 mt-2">
-          {((playbackRate - 1) * 100).toFixed(1)}%
-        </span>
-      </div>
-    </div>
+    </>
   );
 });

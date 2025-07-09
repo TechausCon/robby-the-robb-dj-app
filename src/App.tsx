@@ -4,14 +4,26 @@ import { Mixer } from './components/Mixer/Mixer';
 import { MidiIndicator } from './components/MidiIndicator';
 import { AITip } from './components/AITip';
 import { FileExplorer } from './components/FileExplorer';
+import { MidiSettings } from './components/MidiSettings';
 import { useMidi } from './hooks/useMidi';
-import type { DeckState, Action, DeckId, Track } from '../types';
+import type { DeckState, Action, DeckId, Track, MidiMapping } from '../types';
 import { deckReducer } from './reducers/deckReducer';
 import { findActionForMidiMessage } from './services/midiMap';
 import { getDjTip } from './services/geminiService';
 import analyzeBpm from 'bpm-detective';
 import jsmediatags from 'jsmediatags';
 import RobbyLogo from '../assets/robby-logo.png';
+
+const arrayBufferToBase64 = (buffer: Uint8Array) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+};
+
 
 async function getAccurateBeatGrid(audioBuffer: AudioBuffer, bpm: number): Promise<number[]> {
   const offlineContext = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);
@@ -98,7 +110,9 @@ const App = (): React.ReactElement => {
   const [isLoadingTip, setIsLoadingTip] = useState<boolean>(false);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [loadingStates, setLoadingStates] = useState<Record<DeckId, string | null>>({ A: null, B: null });
-  const [library, setLibrary] = useState<File[]>([]);
+  const [library, setLibrary] = useState<Track[]>([]);
+  const [activeMapping, setActiveMapping] = useState<MidiMapping | null>(null);
+  const [mappingName, setMappingName] = useState<string | null>(null);
 
   const audioA = useRef<HTMLAudioElement>(null);
   const audioB = useRef<HTMLAudioElement>(null);
@@ -107,83 +121,103 @@ const App = (): React.ReactElement => {
   const animationFrameIdA = useRef<number | null>(null);
   const animationFrameIdB = useRef<number | null>(null);
 
-  const { lastMessage, midiDeviceName } = useMidi();
+  // KORREKTUR: Der Hook liefert jetzt das erkannte Mapping
+  const { lastMessage, midiDeviceName, detectedMapping } = useMidi();
 
-  const handleFilesAdded = (files: FileList) => {
-    const newFiles = Array.from(files);
-    const uniqueNewFiles = newFiles.filter(newFile =>
-      !library.some(existingFile => existingFile.name === newFile.name && existingFile.size === newFile.size)
-    );
-    setLibrary(prevLibrary => [...prevLibrary, ...uniqueNewFiles].sort((a, b) => a.name.localeCompare(b.name)));
-  };
+  // Effekt, um das automatisch erkannte Mapping zu setzen
+  useEffect(() => {
+    if (detectedMapping) {
+      setActiveMapping(detectedMapping.mapping);
+      setMappingName(detectedMapping.name);
+    }
+  }, [detectedMapping]);
 
-  const handleLoadTrack = useCallback(
-    async (deckId: DeckId, file: File) => {
-      setLoadingStates(prev => ({ ...prev, [deckId]: 'Lade Datei...' }));
+  const handleFilesAdded = useCallback(async (files: FileList) => {
+    let currentAudioContext = audioContext;
+    if (!currentAudioContext) {
+      try {
+        currentAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        setAudioContext(currentAudioContext);
+      } catch (e) {
+        console.error('Web Audio API is not supported in this browser.', e);
+        return;
+      }
+    }
 
-      let currentAudioContext = audioContext;
-      if (!currentAudioContext) {
-        try {
-          currentAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-          setAudioContext(currentAudioContext);
-        } catch (e) {
-          console.error('Web Audio API is not supported in this browser.', e);
-          setLoadingStates(prev => ({ ...prev, [deckId]: null }));
-          return;
-        }
-      }
+    const newTracks: Track[] = [];
+    for (const file of Array.from(files)) {
+      const trackId = `${file.name}-${file.size}`;
+      if (library.some(track => track.id === trackId)) continue;
 
-      const dispatch = deckId === 'A' ? dispatchA : dispatchB;
-      const url = URL.createObjectURL(file);
-      const arrayBuffer = await file.arrayBuffer();
-      const audioBuffer = await currentAudioContext.decodeAudioData(arrayBuffer.slice(0));
+      const url = URL.createObjectURL(file);
+      const arrayBuffer = await file.arrayBuffer();
+      const audioBuffer = await currentAudioContext.decodeAudioData(arrayBuffer.slice(0));
 
-      const trackForAnalysis: Track = { name: file.name, url: url, audioBuffer: audioBuffer };
+      const track: Partial<Track> = {
+        id: trackId,
+        name: file.name.replace(/\.[^/.]+$/, ""),
+        url: url,
+        duration: audioBuffer.duration,
+        audioBuffer: audioBuffer,
+      };
 
-      const finishLoading = async (trackWithMetadata: Track) => {
-        if (!trackWithMetadata.bpm) {
-          try {
-            setLoadingStates(prev => ({ ...prev, [deckId]: 'Analysiere BPM...' }));
-            const bpm = await analyzeBpm(trackWithMetadata.audioBuffer!);
-            trackWithMetadata.bpm = Number(bpm);
-          } catch (err) {
-            console.error('BPM-Analyse fehlgeschlagen:', err);
-          }
-        }
+      try {
+        const tags = await new Promise((resolve, reject) => {
+          jsmediatags.read(file, { onSuccess: resolve, onError: reject });
+        });
+        
+        const meta = (tags as any).tags;
+        track.name = meta.title || track.name;
+        track.artist = meta.artist;
+        track.album = meta.album;
+        track.year = meta.year;
+        track.genre = meta.genre;
+        if (meta.TKEY?.data) track.initialKey = meta.TKEY.data;
+        if (meta.TBP?.data) track.bpm = parseFloat(meta.TBP.data);
 
-        if (trackWithMetadata.bpm && !isNaN(trackWithMetadata.bpm)) {
-          try {
-            setLoadingStates(prev => ({ ...prev, [deckId]: 'Erstelle Beat-Grid...' }));
-            const beatGrid = await getAccurateBeatGrid(trackWithMetadata.audioBuffer!, trackWithMetadata.bpm);
-            trackWithMetadata.beatGrid = beatGrid;
-          } catch (err) {
-            console.error('Beat-Grid-Analyse fehlgeschlagen:', err);
-          }
-        }
+        if (meta.picture) {
+          const { data, format } = meta.picture;
+          const base64String = arrayBufferToBase64(data);
+          track.coverArt = `data:${format};base64,${base64String}`;
+        }
+      } catch (error) {
+        console.warn('Metadaten konnten nicht gelesen werden:', error);
+      }
+      
+      if (!track.bpm) {
+        try {
+          track.bpm = await analyzeBpm(audioBuffer);
+        } catch (err) {
+          console.error('BPM-Analyse fehlgeschlagen:', err);
+        }
+      }
+      
+      newTracks.push(track as Track);
+    }
+    
+    setLibrary(prev => [...prev, ...newTracks].sort((a, b) => a.name.localeCompare(b.name)));
+  }, [audioContext, library]);
 
-        dispatch({ type: 'LOAD_TRACK', payload: trackWithMetadata });
-        setLoadingStates(prev => ({ ...prev, [deckId]: null }));
-      };
+  const loadTrackToDeck = useCallback(async (deckId: DeckId, track: Track) => {
+    const dispatch = deckId === 'A' ? dispatchA : dispatchB;
+    let trackToLoad = { ...track };
 
-      jsmediatags.read(file, {
-        onSuccess: (tag: any) => {
-          const trackWithMetadata = { ...trackForAnalysis };
-          const tags = tag.tags;
-          trackWithMetadata.name = tags.title || file.name;
-          trackWithMetadata.artist = tags.artist;
-          if (tags.TBP?.data) {
-            trackWithMetadata.bpm = parseFloat(tags.TBP.data);
-          }
-          finishLoading(trackWithMetadata);
-        },
-        onError: (error: any) => {
-          console.warn('Metadaten konnten nicht gelesen werden. Fahre mit Analyse fort.', error);
-          finishLoading(trackForAnalysis);
-        },
-      });
-    },
-    [audioContext]
-  );
+    if (trackToLoad.audioBuffer && !trackToLoad.beatGrid) {
+      setLoadingStates(prev => ({ ...prev, [deckId]: 'Erstelle Beat-Grid...' }));
+      try {
+        if (trackToLoad.bpm) {
+          const beatGrid = await getAccurateBeatGrid(trackToLoad.audioBuffer, trackToLoad.bpm);
+          trackToLoad.beatGrid = beatGrid;
+        }
+      } catch (err) {
+        console.error('Beat-Grid-Analyse fehlgeschlagen:', err);
+      }
+    }
+    
+    dispatch({ type: 'LOAD_TRACK', payload: trackToLoad });
+    setLoadingStates(prev => ({ ...prev, [deckId]: null }));
+  }, []);
+
 
   const handleTogglePlay = useCallback(async (deckId: DeckId) => {
     if (!audioContext) {
@@ -197,10 +231,34 @@ const App = (): React.ReactElement => {
     dispatch({ type: 'TOGGLE_PLAY' });
   }, [audioContext]);
 
+  const handleMappingLoad = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const mappingContent = event.target?.result;
+        if (typeof mappingContent === 'string') {
+          const loadedFile = JSON.parse(mappingContent);
+          // Überprüfen, ob die Datei die erwartete Struktur hat
+          if (loadedFile && loadedFile.mapping && typeof loadedFile.mapping === 'object') {
+            setActiveMapping(loadedFile.mapping);
+            setMappingName(loadedFile.name || file.name);
+            console.log('MIDI Mapping erfolgreich geladen:', file.name);
+          } else {
+            throw new Error("Invalid mapping file structure.");
+          }
+        }
+      } catch (e) {
+        console.error("Fehler beim Parsen der MIDI-Mapping-Datei:", e);
+        alert("Ungültige Mapping-Datei. Bitte stelle sicher, dass es eine valide JSON-Datei mit einem 'name' und 'mapping' Feld ist.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   useEffect(() => {
     const manageDeck = (
       deckState: DeckState,
-      audioRef: React.RefObject<HTMLAudioElement | null>, // KORREKTUR: Typ erlaubt jetzt null
+      audioRef: React.RefObject<HTMLAudioElement | null>,
       dispatch: React.Dispatch<Action>,
       animationFrameIdRef: React.MutableRefObject<number | null>
     ) => {
@@ -327,7 +385,7 @@ const App = (): React.ReactElement => {
 
   useEffect(() => {
     if (!lastMessage) return;
-    const midiAction = findActionForMidiMessage(lastMessage);
+    const midiAction = findActionForMidiMessage(lastMessage, activeMapping);
     if (!midiAction) return;
     const { action, deckId, value } = midiAction;
 
@@ -372,7 +430,7 @@ const App = (): React.ReactElement => {
     } else if (action === 'SET_CROSSFADER') {
       setCrossfader(Math.round((value / 127) * 100));
     }
-  }, [lastMessage, handleTogglePlay]);
+  }, [lastMessage, handleTogglePlay, activeMapping]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 flex flex-col items-center justify-center p-4 font-sans select-none">
@@ -386,6 +444,7 @@ const App = (): React.ReactElement => {
           </div>
           <div className="flex items-center space-x-4">
             <AITip onGetTip={handleFetchAiTip} tip={aiTip} isLoading={isLoadingTip} />
+            <MidiSettings onMappingLoad={handleMappingLoad} mappingName={mappingName} />
             <MidiIndicator deviceName={midiDeviceName} />
           </div>
         </header>
@@ -400,7 +459,7 @@ const App = (): React.ReactElement => {
           	  dispatch={dispatchA}
           	  audioRef={audioA}
           	  crossfader={crossfader}
-          	  onLoadTrack={(file) => handleLoadTrack('A', file)}
+          	  onLoadTrack={(file) => { /* Wird nicht mehr direkt vom Deck aufgerufen */ }}
           	  loadingMessage={loadingStates.A}
           	/>
           </div>
@@ -423,14 +482,14 @@ const App = (): React.ReactElement => {
           	  dispatch={dispatchB}
           	  audioRef={audioB}
           	  crossfader={crossfader}
-          	  onLoadTrack={(file) => handleLoadTrack('B', file)}
+          	  onLoadTrack={(file) => { /* Wird nicht mehr direkt vom Deck aufgerufen */ }}
           	  loadingMessage={loadingStates.B}
           	/>
           </div>
         </main>
       </div>
 
-      <FileExplorer library={library} onFilesAdded={handleFilesAdded} onLoadTrack={handleLoadTrack} />
+      <FileExplorer library={library} onFilesAdded={handleFilesAdded} onLoadTrack={loadTrackToDeck} />
 
       <footer className="text-center mt-4 text-gray-500 text-xs">
         <p>Conceptual MIDI mapping for Traktor Kontrol S4 MK3. Edit <code>services/midiMap.ts</code> to match your device.</p>

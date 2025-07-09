@@ -1,32 +1,44 @@
 import { useState, useEffect, useRef } from 'react';
-import { MidiMessage } from '../../types';
+import { MidiMessage, MidiMapping } from '../../types';
+import { detectMappingForDevice } from '../mappings';
 
 export const useMidi = () => {
   const [midiDeviceName, setMidiDeviceName] = useState<string | null>(null);
   const [lastMessage, setLastMessage] = useState<MidiMessage | null>(null);
+  const [detectedMapping, setDetectedMapping] = useState<{ name: string; mapping: MidiMapping } | null>(null);
   const midiAccessRef = useRef<MIDIAccess | null>(null);
 
   const onMIDIMessage = (event: MIDIMessageEvent) => {
-    const [command, note, velocity] = event.data;
-    const channel = command & 0x0f; // Get lower 4 bits for channel
-    const cmd = command & 0xf0; // Get higher 4 bits for command
-    
-    setLastMessage({ command: cmd, channel, note, velocity });
+    const data = event.data;
+    if (data) {
+        const [command, note, velocity] = data;
+        const channel = command & 0x0f;
+        const cmd = command & 0xf0;
+        setLastMessage({ command: cmd, channel, note, velocity });
+    }
   };
 
   const updateMidiConnections = (midiAccess: MIDIAccess) => {
     const inputs = Array.from(midiAccess.inputs.values());
     
-    // Set up listeners on all inputs
     for (const input of inputs) {
       input.onmidimessage = onMIDIMessage;
     }
     
-    // Update the device name displayed. Show the first one, or null if none.
     if (inputs.length > 0) {
-      setMidiDeviceName(inputs[0].name || 'Unknown Device');
+      const deviceName = inputs[0].name || 'Unknown Device';
+      setMidiDeviceName(deviceName);
+      // Versuche, ein Mapping für das verbundene Gerät zu finden
+      const mapping = detectMappingForDevice(deviceName);
+      setDetectedMapping(mapping);
+      if (mapping) {
+        console.log(`Mapping "${mapping.name}" für Gerät "${deviceName}" geladen.`);
+      } else {
+        console.log(`Kein Standard-Mapping für "${deviceName}" gefunden. Bitte manuell laden.`);
+      }
     } else {
       setMidiDeviceName(null);
+      setDetectedMapping(null);
     }
   };
 
@@ -34,9 +46,10 @@ export const useMidi = () => {
     midiAccessRef.current = midiAccess;
     updateMidiConnections(midiAccess);
 
-    // When a device is connected or disconnected
     midiAccess.onstatechange = (event: MIDIConnectionEvent) => {
-      console.log(`MIDI Port state change: ${event.port.name} (${event.port.state})`);
+      if (event.port) {
+          console.log(`MIDI Port state change: ${event.port.name} (${event.port.state})`);
+      }
       updateMidiConnections(midiAccess);
     };
   };
@@ -49,12 +62,11 @@ export const useMidi = () => {
   useEffect(() => {
     if (navigator.requestMIDIAccess) {
       navigator.requestMIDIAccess({ sysex: false })
-        .then(onMIDISuccess, () => onMIDIFailure('Could not access your MIDI devices. Please ensure you grant permission.'));
+        .then(onMIDISuccess, () => onMIDIFailure('Could not access your MIDI devices.'));
     } else {
         onMIDIFailure('WebMIDI is not supported in this browser.');
     }
     
-    // Cleanup function
     return () => {
       const midiAccess = midiAccessRef.current;
       if (midiAccess) {
@@ -64,8 +76,7 @@ export const useMidi = () => {
         });
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { midiDeviceName, lastMessage };
+  return { midiDeviceName, lastMessage, detectedMapping };
 };

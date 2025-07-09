@@ -1,35 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { PlayIcon, PauseIcon, StopCircleIcon, UploadCloudIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
-
-// Annahme der Typ-Definitionen
-type DeckId = 'A' | 'B';
-interface Track {
-  name: string;
-  artist?: string;
-  url: string;
-  bpm?: number;
-  audioBuffer?: AudioBuffer;
-}
-interface DeckState {
-  id: DeckId;
-  track: Track | null;
-  isPlaying: boolean;
-  playbackRate: number;
-  syncedTo: DeckId | null;
-  progress: number;
-  cuePoint: number;
-  volume: number;
-  low: number;
-  mid: number;
-  high: number;
-  filter: number;
-}
-type Action =
-  | { type: 'TOGGLE_PLAY' }
-  | { type: 'SET_PLAYBACK_RATE'; payload: number }
-  | { type: 'SET_PROGRESS'; payload: number }
-  | { type: 'SET_CUE'; payload: number }
-  | { type: 'JUMP_TO_CUE' };
+// KORREKTUR: Typen werden jetzt aus der zentralen Datei importiert, genau wie im Mixer.
+import type { DeckId, Track, DeckState, Action } from '../../../types';
 
 interface DeckProps {
   deckState: DeckState;
@@ -43,7 +15,6 @@ interface DeckProps {
   loadingMessage: string | null;
 }
 
-// Waveform-Component
 const WaveformDisplay = ({
   audioBuffer,
   progress,
@@ -134,7 +105,6 @@ const WaveformDisplay = ({
 };
 
 
-// Haupt-Deck-Komponente
 export const Deck = React.memo(({
   deckState,
   dispatch,
@@ -358,18 +328,15 @@ export const Deck = React.memo(({
           </button>
         </div>
 
-        {/* KORREKTUR: Überarbeitetes Layout für den Pitchfader */}
         <div className="flex flex-col items-center w-16 h-full justify-between py-4">
             <span className="text-xs text-gray-400 font-semibold">+8%</span>
             <div className="relative flex-1 w-full my-2 flex justify-center items-center">
-                {/* Visuelle Schiene */}
                 <div className="w-1.5 h-full bg-gray-900 rounded-full absolute">
-                    {/* Mittenmarkierung */}
                     <div className="h-0.5 w-4 bg-gray-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
                 </div>
                 <input
                     type="range"
-                    min="0.92" // Korrekte Reihenfolge für vertikale Logik
+                    min="0.92"
                     max="1.08"
                     step="0.0005"
                     value={playbackRate}

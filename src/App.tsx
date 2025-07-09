@@ -121,10 +121,8 @@ const App = (): React.ReactElement => {
   const animationFrameIdA = useRef<number | null>(null);
   const animationFrameIdB = useRef<number | null>(null);
 
-  // KORREKTUR: Der Hook liefert jetzt das erkannte Mapping
   const { lastMessage, midiDeviceName, detectedMapping } = useMidi();
 
-  // Effekt, um das automatisch erkannte Mapping zu setzen
   useEffect(() => {
     if (detectedMapping) {
       setActiveMapping(detectedMapping.mapping);
@@ -238,7 +236,6 @@ const App = (): React.ReactElement => {
         const mappingContent = event.target?.result;
         if (typeof mappingContent === 'string') {
           const loadedFile = JSON.parse(mappingContent);
-          // Überprüfen, ob die Datei die erwartete Struktur hat
           if (loadedFile && loadedFile.mapping && typeof loadedFile.mapping === 'object') {
             setActiveMapping(loadedFile.mapping);
             setMappingName(loadedFile.name || file.name);
@@ -444,7 +441,7 @@ const App = (): React.ReactElement => {
           </div>
           <div className="flex items-center space-x-4">
             <AITip onGetTip={handleFetchAiTip} tip={aiTip} isLoading={isLoadingTip} />
-            <MidiSettings onMappingLoad={handleMappingLoad} mappingName={mappingName} />
+            <MidiSettings onMappingLoad={handleMappingLoad} mappingName={mappingName} activeMapping={activeMapping} />
             <MidiIndicator deviceName={midiDeviceName} />
           </div>
         </header>

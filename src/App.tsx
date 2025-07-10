@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+// src/App.tsx
+
+import React, { useState, useEffect, useRef, useCallback, useReducer } from 'react';
 import { Deck } from './components/Deck/Deck';
 import { Mixer } from './components/Mixer/Mixer';
 import { MidiIndicator } from './components/MidiIndicator';
@@ -15,7 +17,13 @@ import { getDjTip } from './services/geminiService';
 import analyzeBpm from 'bpm-detective';
 import jsmediatags from 'jsmediatags';
 import RobbyLogo from '../assets/robby-logo.png';
+import { LogOutIcon } from 'lucide-react';
 
+// Imports für Backend-Kommunikation.
+import { getUserSettings, saveUserSettings } from './services/api';
+
+
+// --- (Die Hilfsfunktionen wie arrayBufferToBase64, getAccurateBeatGrid etc. bleiben unverändert) ---
 const arrayBufferToBase64 = (buffer: Uint8Array) => {
     let binary = '';
     const bytes = new Uint8Array(buffer);
@@ -86,6 +94,7 @@ async function getAccurateBeatGrid(audioBuffer: AudioBuffer, bpm: number): Promi
   return beatGrid;
 }
 
+
 const HOT_CUE_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e',
   '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'
@@ -118,9 +127,10 @@ const baseInitialState: Omit<DeckState, 'id'> = {
 
 const initialDeckAState: DeckState = { ...baseInitialState, id: 'A' };
 const initialDeckBState: DeckState = { ...baseInitialState, id: 'B' };
+
 const App = (): React.ReactElement => {
-  const [deckAState, dispatchA] = React.useReducer(deckReducer, initialDeckAState);
-  const [deckBState, dispatchB] = React.useReducer(deckReducer, initialDeckBState);
+  const [deckAState, dispatchA] = useReducer(deckReducer, initialDeckAState);
+  const [deckBState, dispatchB] = useReducer(deckReducer, initialDeckBState);
   const [crossfader, setCrossfader] = useState<number>(50);
   const [aiTip, setAiTip] = useState<string>('');
   const [isLoadingTip, setIsLoadingTip] = useState<boolean>(false);
@@ -131,6 +141,9 @@ const App = (): React.ReactElement => {
   const [mappingName, setMappingName] = useState<string | null>(null);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
 
+  const [isSettingsLoading, setIsSettingsLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving'>('idle');
+
   const audioA = useRef<HTMLAudioElement>(null);
   const audioB = useRef<HTMLAudioElement>(null);
   const syncTimeoutRefA = useRef<number | null>(null);
@@ -140,20 +153,163 @@ const App = (): React.ReactElement => {
 
   const { lastMessage, midiDeviceName, detectedMapping } = useMidi();
 
-  // Make audioContext available globally for PerformanceMonitor
+  // Effekt zum Laden der Benutzereinstellungen beim App-Start
   useEffect(() => {
-    if (audioContext) {
-      (window as any).audioContext = audioContext;
-    }
-  }, [audioContext]);
+    const loadSettings = async () => {
+      try {
+        const settings = await getUserSettings();
+        if (settings) {
+          if (settings.mixer_settings) {
+            const { deckA, deckB, crossfader } = settings.mixer_settings;
+            dispatchA({ type: 'SET_MIXER_STATE', payload: deckA });
+            dispatchB({ type: 'SET_MIXER_STATE', payload: deckB });
+            setCrossfader(crossfader);
+          }
+          if (settings.midi_mapping) {
+            setActiveMapping(settings.midi_mapping);
+            setMappingName("Gespeichertes Mapping");
+          }
+        }
+      } catch (error) {
+        console.error("Fehler beim Laden der Einstellungen:", error);
+      } finally {
+        setIsSettingsLoading(false);
+      }
+    };
+    loadSettings();
+  }, []);
 
-  useEffect(() => {
-    if (detectedMapping) {
-      setActiveMapping(detectedMapping.mapping);
-      setMappingName(detectedMapping.name);
+  // Die handleLogout-Funktion speichert die Einstellungen vor dem Ausloggen.
+  const handleLogout = async () => {
+    setSaveStatus('saving');
+    try {
+      // Aktuellen Stand der Einstellungen zusammenstellen
+      const settingsToSave = {
+        mixer_settings: {
+            deckA: { volume: deckAState.volume, low: deckAState.low, mid: deckAState.mid, high: deckAState.high, filter: deckAState.filter },
+            deckB: { volume: deckBState.volume, low: deckBState.low, mid: deckBState.mid, high: deckBState.high, filter: deckBState.filter },
+            crossfader: crossfader,
+        },
+        midi_mapping: activeMapping,
+      };
+      await saveUserSettings(settingsToSave);
+    } catch (error) {
+      console.error("Fehler beim Speichern der Einstellungen beim Logout:", error);
+    } finally {
+      localStorage.removeItem('authToken');
+      window.location.href = '/login';
     }
-  }, [detectedMapping]);
-  // Keyboard shortcut handlers
+  };
+  
+  // --- KORREKTUR: Fehlende Logik-Hooks hinzugefügt ---
+
+  // Dieser Effekt steuert die eigentliche Wiedergabe und den Fortschrittsbalken
+  useEffect(() => {
+    const manageDeck = (
+      deckState: DeckState,
+      audioRef: React.RefObject<HTMLAudioElement | null>,
+      dispatch: React.Dispatch<Action>,
+      animationFrameIdRef: React.MutableRefObject<number | null>
+    ) => {
+      const audio = audioRef.current;
+      if (!audio || !deckState.track) return;
+
+      const animate = () => {
+        if (audio.duration > 0 && !audio.paused) {
+          dispatch({ type: 'SET_PROGRESS', payload: (audio.currentTime / audio.duration) * 100 });
+          animationFrameIdRef.current = requestAnimationFrame(animate);
+        }
+      };
+
+      if (deckState.isPlaying) {
+        audio.play().then(() => {
+          animate();
+        }).catch(e => {
+          console.error(`Fehler bei der Wiedergabe von Deck ${deckState.id}:`, e);
+          dispatch({ type: 'TOGGLE_PLAY' });
+        });
+      } else {
+        audio.pause();
+        if (animationFrameIdRef.current) {
+          cancelAnimationFrame(animationFrameIdRef.current);
+        }
+      }
+    };
+
+    manageDeck(deckAState, audioA, dispatchA, animationFrameIdA);
+    manageDeck(deckBState, audioB, dispatchB, animationFrameIdB);
+
+    return () => {
+      if (animationFrameIdA.current) cancelAnimationFrame(animationFrameIdA.current);
+      if (animationFrameIdB.current) cancelAnimationFrame(animationFrameIdB.current);
+    };
+  }, [deckAState.isPlaying, deckBState.isPlaying, deckAState.track, deckBState.track]);
+
+  // Dieser Effekt synchronisiert die BPM, wenn SYNC aktiviert ist
+  useEffect(() => {
+    const checkAndSync = (master: DeckState, slave: DeckState, slaveDispatch: React.Dispatch<Action>) => {
+      if (slave.syncedTo === master.id && master.track?.bpm && slave.track?.bpm) {
+        const masterBpm = Number(master.track.bpm) * master.playbackRate;
+        const currentSlaveBpm = Number(slave.track.bpm) * slave.playbackRate;
+        if (Math.abs(masterBpm - currentSlaveBpm) > 0.01) {
+          slaveDispatch({ type: 'SYNC_BPM', payload: { targetBpm: masterBpm } });
+        }
+      }
+    };
+    checkAndSync(deckBState, deckAState, dispatchA);
+    checkAndSync(deckAState, deckBState, dispatchB);
+  }, [
+    deckAState.playbackRate, deckAState.syncedTo,
+    deckBState.playbackRate, deckBState.syncedTo,
+    deckAState.track, deckBState.track,
+  ]);
+
+  // Dieser Effekt verarbeitet eingehende MIDI-Nachrichten
+  useEffect(() => {
+    if (!lastMessage || !activeMapping) return;
+    const midiAction = findActionForMidiMessage(lastMessage, activeMapping);
+    if (!midiAction) return;
+    
+    const { action, deckId, value } = midiAction;
+
+    const dispatch = deckId === 'A' ? dispatchA : dispatchB;
+    const audioRef = deckId === 'A' ? audioA : audioB;
+
+    switch (action) {
+      case 'TOGGLE_PLAY':
+        handleTogglePlay(deckId!);
+        break;
+      case 'SET_CUE':
+        if (audioRef.current && !audioRef.current.paused) {
+          dispatch({ type: 'SET_CUE', payload: audioRef.current.currentTime });
+        }
+        break;
+      case 'JUMP_TO_CUE':
+        dispatch({ type: 'JUMP_TO_CUE' });
+        break;
+      case 'SET_VOLUME':
+        dispatch({ type: 'SET_VOLUME', payload: Math.round((value / 127) * 100) });
+        break;
+      case 'SET_LOW':
+      case 'SET_MID':
+      case 'SET_HIGH':
+      case 'SET_FILTER':
+        dispatch({ type: action, payload: Math.round((value / 127) * 100) });
+        break;
+      case 'JOG_WHEEL':
+        if (audioRef.current) {
+          const direction = value === 1 ? 1 : -1;
+          audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime + direction * 0.1);
+        }
+        break;
+      case 'SET_CROSSFADER':
+        setCrossfader(Math.round((value / 127) * 100));
+        break;
+    }
+  }, [lastMessage, activeMapping]);
+
+
+  // --- (Die restlichen Callbacks bleiben größtenteils gleich) ---
   const handleSetCue = useCallback((deckId: DeckId) => {
     const audioRef = deckId === 'A' ? audioA : audioB;
     const dispatch = deckId === 'A' ? dispatchA : dispatchB;
@@ -257,8 +413,7 @@ const App = (): React.ReactElement => {
 
     dispatch({ type: 'TOGGLE_SYNC', payload: { syncToDeckId } });
   }, [deckAState, deckBState]);
-
-  // Use keyboard shortcuts
+  
   useKeyboardShortcuts({
     onTogglePlay: handleTogglePlay,
     onSetCue: handleSetCue,
@@ -269,7 +424,7 @@ const App = (): React.ReactElement => {
     onJumpToHotCue: handleJumpToHotCue,
     onShowHelp: () => setShowKeyboardHelp(true),
   });
-
+  
   const handleFilesAdded = useCallback(async (files: FileList) => {
     let currentAudioContext = audioContext;
     if (!currentAudioContext) {
@@ -335,7 +490,7 @@ const App = (): React.ReactElement => {
     
     setLibrary(prev => [...prev, ...newTracks].sort((a, b) => a.name.localeCompare(b.name)));
   }, [audioContext, library]);
-
+  
   const loadTrackToDeck = useCallback(async (deckId: DeckId, track: Track) => {
     const dispatch = deckId === 'A' ? dispatchA : dispatchB;
     let trackToLoad = { ...track };
@@ -355,7 +510,7 @@ const App = (): React.ReactElement => {
     dispatch({ type: 'LOAD_TRACK', payload: trackToLoad });
     setLoadingStates(prev => ({ ...prev, [deckId]: null }));
   }, []);
-
+  
   const handleMappingLoad = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -378,7 +533,7 @@ const App = (): React.ReactElement => {
     };
     reader.readAsText(file);
   };
-
+  
   const handleFetchAiTip = useCallback(async () => {
     setIsLoadingTip(true);
     setAiTip('');
@@ -392,115 +547,15 @@ const App = (): React.ReactElement => {
       setIsLoadingTip(false);
     }
   }, []);
-  useEffect(() => {
-    const manageDeck = (
-      deckState: DeckState,
-      audioRef: React.RefObject<HTMLAudioElement | null>,
-      dispatch: React.Dispatch<Action>,
-      animationFrameIdRef: React.MutableRefObject<number | null>
-    ) => {
-      const audio = audioRef.current;
-      if (!audio) return;
 
-      const animate = () => {
-        if (audio.duration && !audio.paused) {
-          dispatch({ type: 'SET_PROGRESS', payload: (audio.currentTime / audio.duration) * 100 });
-          animationFrameIdRef.current = requestAnimationFrame(animate);
-        }
-      };
+  if (isSettingsLoading) {
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white text-xl">
+            Lade deine Einstellungen...
+        </div>
+    );
+  }
 
-      if (deckState.isPlaying) {
-        audio.play().then(() => {
-          animate();
-        }).catch(e => {
-          console.error(`Playback failed for deck ${deckState.id}`, e);
-        });
-      } else {
-        audio.pause();
-        if (animationFrameIdRef.current) {
-          cancelAnimationFrame(animationFrameIdRef.current);
-        }
-      }
-    };
-
-    manageDeck(deckAState, audioA, dispatchA, animationFrameIdA);
-    manageDeck(deckBState, audioB, dispatchB, animationFrameIdB);
-
-    return () => {
-      if (animationFrameIdA.current) cancelAnimationFrame(animationFrameIdA.current);
-      if (animationFrameIdB.current) cancelAnimationFrame(animationFrameIdB.current);
-    };
-  }, [deckAState.isPlaying, deckBState.isPlaying, audioContext]);
-
-  useEffect(() => {
-    const checkAndSync = (master: DeckState, slave: DeckState, slaveDispatch: React.Dispatch<Action>) => {
-      if (slave.syncedTo === master.id && master.track?.bpm && slave.track?.bpm) {
-        const masterBpm = Number(master.track.bpm) * master.playbackRate;
-        const currentSlaveBpm = Number(slave.track.bpm) * slave.playbackRate;
-        if (Math.abs(masterBpm - currentSlaveBpm) > 0.01) {
-          slaveDispatch({ type: 'SYNC_BPM', payload: { targetBpm: masterBpm } });
-        }
-      }
-    };
-    checkAndSync(deckBState, deckAState, dispatchA);
-    checkAndSync(deckAState, deckBState, dispatchB);
-  }, [
-    deckAState.playbackRate,
-    deckAState.syncedTo,
-    deckBState.playbackRate,
-    deckBState.syncedTo,
-    deckAState.track,
-    deckBState.track,
-  ]);
-
-  useEffect(() => {
-    if (!lastMessage) return;
-    const midiAction = findActionForMidiMessage(lastMessage, activeMapping);
-    if (!midiAction) return;
-    const { action, deckId, value } = midiAction;
-
-    if (deckId) {
-      const dispatch = deckId === 'A' ? dispatchA : dispatchB;
-      switch (action) {
-        case 'TOGGLE_PLAY':
-          handleTogglePlay(deckId);
-          break;
-        case 'SET_CUE':
-          const audioRef = deckId === 'A' ? audioA : audioB;
-          if (audioRef.current && !audioRef.current.paused) {
-            dispatch({ type: 'SET_CUE', payload: audioRef.current.currentTime });
-          }
-          break;
-        case 'JUMP_TO_CUE':
-          dispatch({ type: 'JUMP_TO_CUE' });
-          break;
-        case 'SET_VOLUME':
-          dispatch({ type: 'SET_VOLUME', payload: Math.round((value / 127) * 100) });
-          break;
-        case 'SET_LOW':
-          dispatch({ type: 'SET_LOW', payload: Math.round((value / 127) * 100) });
-          break;
-        case 'SET_MID':
-          dispatch({ type: 'SET_MID', payload: Math.round((value / 127) * 100) });
-          break;
-        case 'SET_HIGH':
-          dispatch({ type: 'SET_HIGH', payload: Math.round((value / 127) * 100) });
-          break;
-        case 'SET_FILTER':
-          dispatch({ type: 'SET_FILTER', payload: Math.round((value / 127) * 100) });
-          break;
-        case 'JOG_WHEEL':
-          const jogAudioRef = deckId === 'A' ? audioA : audioB;
-          if (jogAudioRef.current) {
-            const direction = value === 1 ? 1 : -1;
-            jogAudioRef.current.currentTime = Math.max(0, jogAudioRef.current.currentTime + direction * 0.1);
-          }
-          break;
-      }
-    } else if (action === 'SET_CROSSFADER') {
-      setCrossfader(Math.round((value / 127) * 100));
-    }
-  }, [lastMessage, handleTogglePlay, activeMapping]);
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 flex flex-col items-center justify-center p-4 font-sans select-none">
       <div className="w-full max-w-7xl bg-gray-800 rounded-xl shadow-2xl border border-gray-700 p-4">
@@ -515,6 +570,19 @@ const App = (): React.ReactElement => {
             <AITip onGetTip={handleFetchAiTip} tip={aiTip} isLoading={isLoadingTip} />
             <MidiSettings onMappingLoad={handleMappingLoad} mappingName={mappingName} activeMapping={activeMapping} />
             <MidiIndicator deviceName={midiDeviceName} />
+            <button
+              onClick={handleLogout}
+              disabled={saveStatus === 'saving'}
+              className="flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-medium border bg-red-600/20 border-red-500 text-red-300 hover:bg-red-600/40 transition-colors disabled:opacity-50"
+              title="Save & Logout"
+            >
+              {saveStatus === 'saving' ? (
+                <span className="animate-spin">💾</span>
+              ) : (
+                <LogOutIcon size={14} />
+              )}
+              <span>{saveStatus === 'saving' ? 'Speichern...' : 'Logout'}</span>
+            </button>
           </div>
         </header>
 
@@ -528,7 +596,7 @@ const App = (): React.ReactElement => {
               dispatch={dispatchA}
               audioRef={audioA}
               crossfader={crossfader}
-              onLoadTrack={(file) => { /* Handled by FileExplorer now */ }}
+              onLoadTrack={(file) => { /* Handled by FileExplorer */ }}
               loadingMessage={loadingStates.A}
             />
           </div>
@@ -551,7 +619,7 @@ const App = (): React.ReactElement => {
               dispatch={dispatchB}
               audioRef={audioB}
               crossfader={crossfader}
-              onLoadTrack={(file) => { /* Handled by FileExplorer now */ }}
+              onLoadTrack={(file) => { /* Handled by FileExplorer */ }}
               loadingMessage={loadingStates.B}
             />
           </div>
@@ -561,8 +629,7 @@ const App = (): React.ReactElement => {
       <FileExplorer library={library} onFilesAdded={handleFilesAdded} onLoadTrack={loadTrackToDeck} />
 
       <footer className="text-center mt-4 text-gray-500 text-xs">
-        <p>Conceptual MIDI mapping for Traktor Kontrol S4 MK3. Edit <code>services/midiMap.ts</code> to match your device.</p>
-        <p>This is a tech demo and not for professional use. Press <kbd className="px-1 py-0.5 bg-gray-700 rounded text-gray-300">?</kbd> for keyboard shortcuts.</p>
+        <p>Drücke <kbd className="px-1 py-0.5 bg-gray-700 rounded text-gray-300">?</kbd> für Tastaturkürzel.</p>
       </footer>
 
       <PerformanceMonitor />

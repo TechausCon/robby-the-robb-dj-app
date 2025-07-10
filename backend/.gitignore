@@ -1,0 +1,5 @@
+# Abhängigkeiten
+node_modules
+
+# Konfigurationsdatei mit Geheimnissen
+.env

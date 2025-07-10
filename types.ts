@@ -1,3 +1,5 @@
+// types.ts
+
 export type DeckId = 'A' | 'B';
 
 // NEU: Definition für ein MIDI-Mapping-Objekt
@@ -24,22 +26,24 @@ export interface Track {
   beatGrid?: number[];
 }
 
-export interface DeckState {
-  id: DeckId;
+// NEU: Ein Typ für die Mixer-Einstellungen, um Wiederholungen zu vermeiden
+export type MixerState = {
   volume: number;
   low: number;
   mid: number;
   high: number;
   filter: number;
+}
+
+export interface DeckState extends MixerState {
+  id: DeckId;
   isPlaying: boolean;
   track: Track | null;
   progress: number;
   cuePoint: number;
   playbackRate: number;
   syncedTo: DeckId | null;
-  // NEU: Hot Cues
   hotCues: Array<{ position: number | null; color: string }>;
-  // NEU: Loop State
   loop: {
     isActive: boolean;
     startTime: number | null;
@@ -71,7 +75,10 @@ export type Action =
   | { type: 'TOGGLE_LOOP' }
   | { type: 'EXIT_LOOP' }
   | { type: 'HALVE_LOOP' }
-  | { type: 'DOUBLE_LOOP' };
+  | { type: 'DOUBLE_LOOP' }
+  // KORREKTUR: Die neue Action zum Setzen des kompletten Mixer-Zustands
+  | { type: 'SET_MIXER_STATE'; payload: MixerState };
+
 
 export interface MidiMessage {
   command: number;

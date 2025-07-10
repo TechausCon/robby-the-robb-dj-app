@@ -1,3 +1,5 @@
+// src/reducers/deckReducer.ts
+
 import { DeckState, Action } from '../../types';
 
 const HOT_CUE_COLORS = [
@@ -137,6 +139,17 @@ export const deckReducer = (state: DeckState, action: Action): DeckState => {
       };
     }
     
+    // KORREKTUR: Der neue Reducer-Fall, um alle Mixer-Werte auf einmal zu setzen
+    case 'SET_MIXER_STATE':
+        return {
+            ...state,
+            volume: action.payload.volume,
+            low: action.payload.low,
+            mid: action.payload.mid,
+            high: action.payload.high,
+            filter: action.payload.filter,
+        };
+
     case 'SET_VOLUME':
       return { ...state, volume: action.payload };
     case 'SET_LOW':

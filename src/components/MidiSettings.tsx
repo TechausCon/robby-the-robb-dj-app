@@ -1,12 +1,14 @@
 import React, { useRef } from 'react';
-import { UploadCloudIcon } from 'lucide-react';
+import { UploadCloudIcon, DownloadIcon } from 'lucide-react';
+import type { MidiMapping } from '../../types'; // FIXED: Correct import path
 
 interface MidiSettingsProps {
   onMappingLoad: (file: File) => void;
   mappingName: string | null;
+  activeMapping: MidiMapping | null;
 }
 
-export const MidiSettings: React.FC<MidiSettingsProps> = ({ onMappingLoad, mappingName }) => {
+export const MidiSettings: React.FC<MidiSettingsProps> = ({ onMappingLoad, mappingName, activeMapping }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUploadClick = () => {
@@ -18,8 +20,27 @@ export const MidiSettings: React.FC<MidiSettingsProps> = ({ onMappingLoad, mappi
     if (file) {
       onMappingLoad(file);
     }
-    // Leert das Input-Feld, damit dieselbe Datei erneut ausgewählt werden kann
     event.target.value = '';
+  };
+
+  const handleSaveMapping = () => {
+    if (!activeMapping) {
+      alert("Kein aktives Mapping zum Speichern vorhanden.");
+      return;
+    }
+    const mappingToSave = {
+      name: mappingName || "Custom Mapping",
+      mapping: activeMapping,
+    };
+    const blob = new Blob([JSON.stringify(mappingToSave, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(mappingName || 'custom-mapping').replace(/\s+/g, '-').toLowerCase()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -38,6 +59,14 @@ export const MidiSettings: React.FC<MidiSettingsProps> = ({ onMappingLoad, mappi
       >
         <UploadCloudIcon size={14} />
         <span>{mappingName ? `Map: ${mappingName}` : 'Load Mapping'}</span>
+      </button>
+      <button
+        onClick={handleSaveMapping}
+        disabled={!activeMapping}
+        className="flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-medium border bg-gray-700/50 border-gray-600 hover:bg-gray-700 hover:border-gray-500 text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        title="Save current MIDI mapping"
+      >
+        <DownloadIcon size={14} />
       </button>
     </div>
   );

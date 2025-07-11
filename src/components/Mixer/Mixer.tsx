@@ -1,5 +1,5 @@
 import React from 'react';
-import { DeckState, Action } from '../../../types';
+import { DeckState, Action, MidiMapping } from '../../../types';
 import { Knob } from '../ui/Knob';
 import { Fader } from '../ui/Fader';
 
@@ -10,15 +10,20 @@ interface MixerProps {
   dispatchB: React.Dispatch<Action>;
   crossfader: number;
   setCrossfader: (value: number) => void;
+  activeMapping?: MidiMapping; // NEU: falls du Mapping hier brauchst
 }
 
 const ChannelStrip: React.FC<{
   deckState: DeckState,
-  dispatch: React.Dispatch<Action>
-}> = ({ deckState, dispatch }) => {
+  dispatch: React.Dispatch<Action>,
+  activeMapping?: MidiMapping // NEU: Optional, falls du’s pro Kanalstrip brauchst
+}> = ({ deckState, dispatch, activeMapping }) => {
   const { id, volume, low, mid, high, filter } = deckState;
   const color = id === 'A' ? 'blue' : 'orange';
   const knobColor = id === 'A' ? 'blue' : 'orange';
+
+  // Hier könntest du auf Mapping reagieren, wenn nötig!
+  // z.B. falls du Mapping-Fader/Knob-Ereignisse pro ChannelStrip willst
 
   return (
     <div className="flex flex-col items-center space-y-4 flex-1 bg-gray-900/50 p-2 rounded-lg">
@@ -43,15 +48,16 @@ export const Mixer: React.FC<MixerProps> = ({
   deckBState,
   dispatchB,
   crossfader,
-  setCrossfader
+  setCrossfader,
+  activeMapping // NEU: kommt von App.tsx, wenn du willst!
 }) => {
   return (
     <div className="bg-gray-800 h-full p-2 rounded-lg border border-gray-700/50 flex flex-col justify-between items-center space-y-4">
       <h3 className="text-lg font-bold text-gray-400 tracking-widest">MIXER</h3>
       
       <div className="w-full flex justify-between items-start space-x-2 flex-grow">
-        <ChannelStrip deckState={deckAState} dispatch={dispatchA} />
-        <ChannelStrip deckState={deckBState} dispatch={dispatchB} />
+        <ChannelStrip deckState={deckAState} dispatch={dispatchA} activeMapping={activeMapping} />
+        <ChannelStrip deckState={deckBState} dispatch={dispatchB} activeMapping={activeMapping} />
       </div>
 
       <div className="w-full flex flex-col items-center pt-2">

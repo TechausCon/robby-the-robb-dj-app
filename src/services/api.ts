@@ -32,6 +32,8 @@ const downloadFileApi = async (endpoint: string, options: RequestInit = {}) => {
     return response.blob();
 };
 
+
+
 export const loginUser = (credentials: any) => fetchApi('/login', { method: 'POST', body: JSON.stringify(credentials) });
 export const registerUser = (credentials: any) => fetchApi('/register', { method: 'POST', body: JSON.stringify(credentials) });
 export const getUserSettings = () => fetchApi('/settings', { method: 'GET' });

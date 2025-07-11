@@ -1,14 +1,24 @@
 import React, { useRef } from 'react';
 import { UploadCloudIcon, DownloadIcon } from 'lucide-react';
-import type { MidiMapping } from '../../types'; // FIXED: Correct import path
+import type { MidiMapping } from '../../types';
 
 interface MidiSettingsProps {
   onMappingLoad: (file: File) => void;
   mappingName: string | null;
   activeMapping: MidiMapping | null;
+  setActiveMapping?: (mapping: MidiMapping) => void; // Optional für Wizard-Integration
+  detectedDeviceName?: string | null;
+  detectedMapping?: { name: string } | null;
 }
 
-export const MidiSettings: React.FC<MidiSettingsProps> = ({ onMappingLoad, mappingName, activeMapping }) => {
+export const MidiSettings: React.FC<MidiSettingsProps> = ({
+  onMappingLoad,
+  mappingName,
+  activeMapping,
+  setActiveMapping, // für Mapping-Wizard
+  detectedDeviceName,
+  detectedMapping,
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUploadClick = () => {
@@ -68,6 +78,27 @@ export const MidiSettings: React.FC<MidiSettingsProps> = ({ onMappingLoad, mappi
       >
         <DownloadIcon size={14} />
       </button>
+
+      {/* Optional: Zeige Gerät & Mapping-Info, falls Props gesetzt */}
+      {detectedDeviceName && (
+        <span className="ml-2 text-xs text-gray-400">Gerät: {detectedDeviceName}</span>
+      )}
+      {detectedMapping?.name && (
+        <span className="ml-2 text-xs text-gray-400">Preset: {detectedMapping.name}</span>
+      )}
+      {/* Optional: Wizard-Button, falls setActiveMapping übergeben */}
+      {setActiveMapping && (
+        <button
+          className="ml-2 px-2 py-1 text-xs rounded bg-cyan-700 hover:bg-cyan-600 text-white"
+          onClick={() => {
+            // Öffne Mapping-Wizard-Modal, oder baue dein Mapping direkt hier!
+            alert('Wizard wäre hier!');
+            // setActiveMapping(...); // Wizard ruft dann setActiveMapping(newMapping)
+          }}
+        >
+          Mapping Wizard
+        </button>
+      )}
     </div>
   );
 };

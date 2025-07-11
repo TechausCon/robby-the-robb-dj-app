@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { PlayIcon, PauseIcon, StopCircleIcon, UploadCloudIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
-import type { DeckId, Track, DeckState, Action } from '../../../types';
+import type { DeckId, Track, DeckState, Action, MidiMapping } from '../../../types';
 import { HotCues } from '../HotCues';
 import { LoopControls, calculateLoopTimes } from '../LoopControls';
 
@@ -15,6 +15,7 @@ interface DeckProps {
   onToggleSync: () => void;
   onTogglePlay: () => void;
   loadingMessage: string | null;
+  activeMapping?: MidiMapping; // NEU: falls du das Mapping auch auf Deck-Ebene brauchst!
 }
 
 // Die WaveformDisplay-Komponente bleibt unverändert...
@@ -174,6 +175,7 @@ export const Deck = React.memo(({
   onToggleSync,
   onTogglePlay,
   loadingMessage,
+  activeMapping, // <- optional, ready für Mapping-basierte Props!
 }: DeckProps) => {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const lowShelfRef = useRef<BiquadFilterNode | null>(null);

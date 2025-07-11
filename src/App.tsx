@@ -1,5 +1,5 @@
 // src/App.tsx
-
+// const EMPTY_MAPPING: MidiMapping = {}; 
 import React, { useState, useEffect, useRef, useCallback, useReducer } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Deck } from './components/Deck/Deck';
@@ -11,6 +11,7 @@ import { MidiSettings } from './components/MidiSettings';
 import { PerformanceMonitor } from './components/PerformanceMonitor';
 import { KeyboardHelp, useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useMidi } from './hooks/useMidi';
+import MidiMappingWizard from './components/MidiMappingWizard'; // <--- NEU!
 import type { DeckState, Action, DeckId, Track, MidiMapping } from '../types';
 import { deckReducer } from './reducers/deckReducer';
 import { findActionForMidiMessage } from './services/midiMap';
@@ -21,7 +22,6 @@ import RobbyLogo from '../assets/robby-logo.png';
 import { LogOutIcon, SettingsIcon } from 'lucide-react';
 import { getUserSettings, saveUserSettings } from './services/api';
 import SettingsPage from './components/SettingsPage';
-
 
 // --- (Hilfsfunktionen bleiben unverändert) ---
 const arrayBufferToBase64 = (buffer: Uint8Array) => {
@@ -128,6 +128,8 @@ const baseInitialState: Omit<DeckState, 'id'> = {
 const initialDeckAState: DeckState = { ...baseInitialState, id: 'A' };
 const initialDeckBState: DeckState = { ...baseInitialState, id: 'B' };
 
+const EMPTY_MAPPING: MidiMapping = {}; // <--- FIX
+
 
 const App = (): React.ReactElement => {
   const [deckAState, dispatchA] = useReducer(deckReducer, initialDeckAState);
@@ -146,6 +148,11 @@ const App = (): React.ReactElement => {
   const navigate = useNavigate();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+  // ---------- Mapping Wizard/Panel State (NEU) ----------
+  const [learnMode, setLearnMode] = useState(false);
+  const [showMappingMenu, setShowMappingMenu] = useState(false);
+  // ------------------------------------------------------
+
   const audioA = useRef<HTMLAudioElement>(null);
   const audioB = useRef<HTMLAudioElement>(null);
   const syncTimeoutRefA = useRef<number | null>(null);
@@ -153,26 +160,46 @@ const App = (): React.ReactElement => {
   const animationFrameIdA = useRef<number | null>(null);
   const animationFrameIdB = useRef<number | null>(null);
 
-  const { lastMessage, midiDeviceName, detectedMapping } = useMidi();
+  // ----------- useMidi jetzt mit aktuellem Mapping! -----------
+  const { lastMessage, midiDeviceName, detectedMapping } = useMidi(
+    activeMapping ?? EMPTY_MAPPING,  // <-- Fallback! Niemals null!
+    dispatchA,
+    dispatchB,
+    setCrossfader
+  );
+  // ------------------------------------------------------------
 
   useEffect(() => {
-    // Initialisiert den AudioContext, sobald der Benutzer mit der Seite interagiert.
     const initAudioContext = () => {
-        if (!audioContext) {
-            const newAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-            setAudioContext(newAudioContext);
-        }
-        window.removeEventListener('click', initAudioContext);
-        window.removeEventListener('keydown', initAudioContext);
+      if (!audioContext) {
+        const newAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        setAudioContext(newAudioContext);
+      }
+      window.removeEventListener('click', initAudioContext);
+      window.removeEventListener('keydown', initAudioContext);
     };
     window.addEventListener('click', initAudioContext);
     window.addEventListener('keydown', initAudioContext);
 
     return () => {
-        window.removeEventListener('click', initAudioContext);
-        window.removeEventListener('keydown', initAudioContext);
+      window.removeEventListener('click', initAudioContext);
+      window.removeEventListener('keydown', initAudioContext);
     };
   }, [audioContext]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("djapp_midi_mapping");
+    if (stored) {
+      try {
+        setActiveMapping(JSON.parse(stored));
+      } catch (e) { }
+    }
+  }, []);
+  useEffect(() => {
+    if (activeMapping) {
+      localStorage.setItem("djapp_midi_mapping", JSON.stringify(activeMapping));
+    }
+  }, [activeMapping]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -204,9 +231,9 @@ const App = (): React.ReactElement => {
     try {
       const settingsToSave = {
         mixer_settings: {
-            deckA: { volume: deckAState.volume, low: deckAState.low, mid: deckAState.mid, high: deckAState.high, filter: deckAState.filter },
-            deckB: { volume: deckBState.volume, low: deckBState.low, mid: deckBState.mid, high: deckBState.high, filter: deckBState.filter },
-            crossfader: crossfader,
+          deckA: { volume: deckAState.volume, low: deckAState.low, mid: deckAState.mid, high: deckAState.high, filter: deckAState.filter },
+          deckB: { volume: deckBState.volume, low: deckBState.low, mid: deckBState.mid, high: deckBState.high, filter: deckBState.filter },
+          crossfader: crossfader,
         },
         midi_mapping: activeMapping,
       };
@@ -218,7 +245,7 @@ const App = (): React.ReactElement => {
       navigate('/login');
     }
   };
-  
+
   useEffect(() => {
     const manageDeck = (
       deckState: DeckState,
@@ -282,7 +309,7 @@ const App = (): React.ReactElement => {
     if (!lastMessage || !activeMapping) return;
     const midiAction = findActionForMidiMessage(lastMessage, activeMapping);
     if (!midiAction) return;
-    
+
     const { action, deckId, value } = midiAction;
 
     const dispatch = deckId === 'A' ? dispatchA : dispatchB;
@@ -351,7 +378,7 @@ const App = (): React.ReactElement => {
     const audioRef = deckId === 'A' ? audioA : audioB;
     const deckState = deckId === 'A' ? deckAState : deckBState;
     const dispatch = deckId === 'A' ? dispatchA : dispatchB;
-    
+
     const cue = deckState.hotCues[index];
     if (cue.position !== null && audioRef.current) {
       audioRef.current.currentTime = cue.position;
@@ -421,7 +448,7 @@ const App = (): React.ReactElement => {
 
     dispatch({ type: 'TOGGLE_SYNC', payload: { syncToDeckId } });
   }, [deckAState, deckBState]);
-  
+
   useKeyboardShortcuts({
     onTogglePlay: handleTogglePlay,
     onSetCue: handleSetCue,
@@ -432,17 +459,17 @@ const App = (): React.ReactElement => {
     onJumpToHotCue: handleJumpToHotCue,
     onShowHelp: () => setShowKeyboardHelp(true),
   });
-  
+
   const handleFilesAdded = useCallback(async (files: FileList) => {
     if (!audioContext) {
-        console.error("AudioContext nicht bereit.");
-        return;
+      console.error("AudioContext nicht bereit.");
+      return;
     }
 
     for (const file of Array.from(files)) {
       const trackId = `local-${file.name}-${file.size}`;
       if (library.some(track => track.id === trackId)) continue;
-      
+
       const url = URL.createObjectURL(file);
       const arrayBuffer = await file.arrayBuffer();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -454,57 +481,57 @@ const App = (): React.ReactElement => {
         duration: audioBuffer.duration,
         audioBuffer: audioBuffer,
       };
-      
+
       // Metadaten und BPM-Analyse hier...
       // ...
-      
+
       loadTrackToDeck(deckAState.track ? 'B' : 'A', track as Track);
     }
   }, [audioContext, library, deckAState.track]);
-  
+
   const loadTrackToDeck = useCallback(async (deckId: DeckId, track: Track) => {
     const dispatch = deckId === 'A' ? dispatchA : dispatchB;
     let trackToLoad = { ...track };
 
     if (!audioContext) {
-        console.error("AudioContext ist nicht bereit, um den Track zu laden.");
-        return;
+      console.error("AudioContext ist nicht bereit, um den Track zu laden.");
+      return;
     }
 
     if (!trackToLoad.audioBuffer && trackToLoad.url) {
-        setLoadingStates(prev => ({ ...prev, [deckId]: 'Analysiere Track...' }));
-        try {
-            const response = await fetch(trackToLoad.url);
-            const arrayBuffer = await response.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            trackToLoad.audioBuffer = audioBuffer;
-            trackToLoad.duration = audioBuffer.duration;
-        } catch (err) {
-            console.error("Fehler beim Analysieren des Tracks:", err);
-            setLoadingStates(prev => ({ ...prev, [deckId]: 'Analyse fehlgeschlagen' }));
-            return;
-        }
+      setLoadingStates(prev => ({ ...prev, [deckId]: 'Analysiere Track...' }));
+      try {
+        const response = await fetch(trackToLoad.url);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        trackToLoad.audioBuffer = audioBuffer;
+        trackToLoad.duration = audioBuffer.duration;
+      } catch (err) {
+        console.error("Fehler beim Analysieren des Tracks:", err);
+        setLoadingStates(prev => ({ ...prev, [deckId]: 'Analyse fehlgeschlagen' }));
+        return;
+      }
     }
 
     if (trackToLoad.audioBuffer) {
-        if (!trackToLoad.bpm) {
-            try {
-                setLoadingStates(prev => ({ ...prev, [deckId]: 'Analysiere BPM...' }));
-                trackToLoad.bpm = await analyzeBpm(trackToLoad.audioBuffer);
-            } catch (err) { console.error('BPM-Analyse fehlgeschlagen:', err); }
-        }
-        if (trackToLoad.bpm && !trackToLoad.beatGrid) {
-            setLoadingStates(prev => ({ ...prev, [deckId]: 'Erstelle Beat-Grid...' }));
-            try {
-                trackToLoad.beatGrid = await getAccurateBeatGrid(trackToLoad.audioBuffer, trackToLoad.bpm);
-            } catch (err) { console.error('Beat-Grid-Analyse fehlgeschlagen:', err); }
-        }
+      if (!trackToLoad.bpm) {
+        try {
+          setLoadingStates(prev => ({ ...prev, [deckId]: 'Analysiere BPM...' }));
+          trackToLoad.bpm = await analyzeBpm(trackToLoad.audioBuffer);
+        } catch (err) { console.error('BPM-Analyse fehlgeschlagen:', err); }
+      }
+      if (trackToLoad.bpm && !trackToLoad.beatGrid) {
+        setLoadingStates(prev => ({ ...prev, [deckId]: 'Erstelle Beat-Grid...' }));
+        try {
+          trackToLoad.beatGrid = await getAccurateBeatGrid(trackToLoad.audioBuffer, trackToLoad.bpm);
+        } catch (err) { console.error('Beat-Grid-Analyse fehlgeschlagen:', err); }
+      }
     }
-    
+
     dispatch({ type: 'LOAD_TRACK', payload: trackToLoad });
     setLoadingStates(prev => ({ ...prev, [deckId]: null }));
-  }, [audioContext]); 
-  
+  }, [audioContext]);
+
   const handleMappingLoad = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -527,7 +554,7 @@ const App = (): React.ReactElement => {
     };
     reader.readAsText(file);
   };
-  
+
   const handleFetchAiTip = useCallback(async () => {
     setIsLoadingTip(true);
     setAiTip('');
@@ -544,14 +571,115 @@ const App = (): React.ReactElement => {
 
   if (isSettingsLoading) {
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white text-xl">
-            Lade deine Einstellungen...
-        </div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white text-xl">
+        Lade deine Einstellungen...
+      </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300 flex flex-col items-center justify-center p-4 font-sans select-none">
+      {/* ---------- Mapping Wizard Overlay ---------- */}
+      <MidiMappingWizard
+        learnMode={learnMode}
+        setLearnMode={setLearnMode}
+        activeMapping={activeMapping ?? EMPTY_MAPPING} // <-- Fallback!
+        setActiveMapping={setActiveMapping}
+        lastMidiMsg={lastMessage}
+        deckOptions={["A", "B"]}
+      />
+      {/* ---------- Mapping Panel Menü ---------- */}
+      <div className="fixed bottom-8 right-8 z-50">
+        <button
+          onClick={() => setShowMappingMenu((s) => !s)}
+          className="bg-cyan-700 text-white rounded-full p-4 shadow-xl hover:bg-cyan-600 transition-colors"
+          title="MIDI Mapping Menü"
+        >
+          🎛️
+        </button>
+        {showMappingMenu && (
+          <div className="mt-3 bg-gray-900 border border-cyan-700 rounded-xl shadow-2xl p-4 flex flex-col gap-2 min-w-[200px]">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-cyan-400 font-bold">Mapping Menü</span>
+              <button
+                onClick={() => setShowMappingMenu(false)}
+                className="text-gray-400 hover:text-red-400 text-xl font-bold"
+                title="Schließen"
+              >×</button>
+            </div>
+            <button
+              onClick={() => {
+                setLearnMode(true);
+                setShowMappingMenu(false);
+              }}
+              className="w-full px-3 py-2 bg-cyan-700 text-white rounded-lg font-semibold hover:bg-cyan-800 transition-colors"
+            >
+              🧙 MIDI Mapping Wizard starten
+            </button>
+            <button
+              onClick={() => {
+                document.querySelector<HTMLInputElement>('#mappingImportInput')?.click();
+                setShowMappingMenu(false);
+              }}
+              className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+            >
+              ⬆️ Mapping laden
+            </button>
+            <button
+              onClick={() => {
+                if (!activeMapping) return;
+                const mappingToSave = {
+                  name: "Custom Mapping",
+                  mapping: activeMapping,
+                };
+                const blob = new Blob([JSON.stringify(mappingToSave, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `custom-mapping.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                setShowMappingMenu(false);
+              }}
+              className="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg font-semibold hover:bg-gray-600 transition-colors"
+              disabled={!activeMapping}
+            >
+              ⬇️ Mapping speichern
+            </button>
+            <input
+              id="mappingImportInput"
+              type="file"
+              className="hidden"
+              accept=".json"
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                  try {
+                    const mappingContent = event.target?.result;
+                    if (typeof mappingContent === 'string') {
+                      const loadedFile = JSON.parse(mappingContent);
+                      if (loadedFile && loadedFile.mapping && typeof loadedFile.mapping === 'object') {
+                        setActiveMapping(loadedFile.mapping);
+                      } else {
+                        throw new Error("Invalid mapping file structure.");
+                      }
+                    }
+                  } catch (e) {
+                    alert("Ungültige Mapping-Datei.");
+                  }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+              }}
+            />
+          </div>
+        )}
+      </div>
+
       <SettingsPage isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       <div className="w-full max-w-7xl bg-gray-800 rounded-xl shadow-2xl border border-gray-700 p-4">
         <header className="flex justify-between items-center mb-4 pb-2 border-b border-gray-700">
@@ -563,7 +691,14 @@ const App = (): React.ReactElement => {
           </div>
           <div className="flex items-center space-x-4">
             <AITip onGetTip={handleFetchAiTip} tip={aiTip} isLoading={isLoadingTip} />
-            <MidiSettings onMappingLoad={handleMappingLoad} mappingName={mappingName} activeMapping={activeMapping} />
+            <MidiSettings
+              onMappingLoad={handleMappingLoad}
+              mappingName={mappingName}
+              activeMapping={activeMapping}
+              setActiveMapping={setActiveMapping}
+              detectedDeviceName={midiDeviceName}
+              detectedMapping={detectedMapping}
+            />
             <MidiIndicator deviceName={midiDeviceName} />
             <button
               onClick={() => setIsSettingsOpen(true)}

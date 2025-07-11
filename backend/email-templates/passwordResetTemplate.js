@@ -1,13 +1,14 @@
 // backend/email-templates/passwordResetTemplate.js
 
 /**
- * Erzeugt das HTML für die E-Mail zum Zurücksetzen des Passworts.
+ * Erzeugt das HTML für eine robuste, Outlook-kompatible Registrierungs-E-Mail.
  * @param {string} resetUrl - Die vollständige URL zum Zurücksetzen des Passworts.
  * @returns {string} - Der vollständige HTML-String für die E-Mail.
  */
 const getPasswordResetHtml = (resetUrl) => {
   const logoUrl = 'https://techaus.org/pics/robby-logo.png';
 
+  // Das ist die korrekte Vorlage, die die 'resetUrl' als Parameter verwendet.
   return `
     <!DOCTYPE html>
     <html lang="de">

@@ -1,5 +1,7 @@
 // src/components/LoginPage.tsx
 import React, { useState } from 'react';
+// NEU: useNavigate importieren
+import { useNavigate } from 'react-router-dom';
 import { loginUser } from '../services/api';
 import AuthLayout from './AuthLayout';
 
@@ -7,6 +9,8 @@ const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  // NEU: useNavigate-Hook initialisieren
+  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -15,7 +19,8 @@ const LoginPage = () => {
       const data = await loginUser({ username, password });
       if (data.token) {
         localStorage.setItem('authToken', data.token);
-        window.location.href = '/app';
+        // KORREKTUR: navigate() für die Weiterleitung verwenden
+        navigate('/app');
       }
     } catch (err: any) {
       setError(err.message);
@@ -41,7 +46,6 @@ const LoginPage = () => {
           className="w-full px-4 py-2 text-white bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
           required
         />
-        {/* HIER IST DER LINK: */}
         <div className="text-right">
             <a href="/forgot-password" className="text-xs text-cyan-400 hover:underline">Passwort vergessen?</a>
         </div>

@@ -6,7 +6,7 @@
  * @returns {string} - Der vollständige HTML-String für die E-Mail.
  */
 const getRegistrationHtml = (username) => {
-  const loginUrl = 'http://localhost:5173/login';
+  const loginUrl = 'http://localhost:5173//login';
   const logoUrl = 'https://techaus.org/pics/robby-logo.png';
 
   return `

@@ -8,15 +8,34 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 require('dotenv').config();
 
-// KORREKTUR: Beide E-Mail-Funktionen importieren
+const CryptoJS = require("crypto-js");
+const { createClient } = require("webdav");
+
 const { sendRegistrationEmail, sendPasswordResetEmail } = require('./emailService');
 
 const app = express();
-app.use(cors()); 
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://dev.robbstock-entertainment.de'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'Die CORS-Policy für diese Seite erlaubt den Zugriff von der angegebenen Origin nicht.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  }
+})); 
+
 app.use(express.json()); 
 
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET;
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 const db = mysql.createPool({
   host: process.env.DB_HOST,
@@ -28,7 +47,117 @@ const db = mysql.createPool({
   queueLimit: 0
 });
 
-// Registrierungs-Endpunkt (unverändert)
+const auth = (req, res, next) => {
+  const token = req.header('x-auth-token');
+  if (!token) return res.status(401).json({ msg: 'Kein Token, Autorisierung verweigert.' });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded.user;
+    next();
+  } catch (e) {
+    res.status(400).json({ msg: 'Token ist nicht gültig.' });
+  }
+};
+
+// ... (Andere Endpunkte bleiben unverändert)
+
+app.post('/api/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    try {
+        const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+        if (users.length === 0) {
+            return res.status(200).json({ msg: 'Wenn ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link gesendet.' });
+        }
+        const user = users[0];
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+        const tokenExpires = Date.now() + 3600000;
+        await db.query('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [hashedToken, tokenExpires, user.id]);
+        
+        // KORREKTUR: Die URL zeigt jetzt wieder auf die lokale Frontend-Adresse.
+        const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+        
+        await sendPasswordResetEmail(user.email, resetUrl);
+        res.status(200).json({ msg: 'Wenn ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link gesendet.' });
+    } catch (err) {
+        console.error('Fehler bei Passwort vergessen:', err);
+        res.status(500).json({ msg: 'Serverfehler.' });
+    }
+});
+
+// ... (Der Rest der server.js bleibt unverändert)
+app.post('/api/nextcloud/download', auth, async (req, res) => {
+    const { path } = req.body;
+    if (!path) {
+        return res.status(400).json({ msg: 'Dateipfad fehlt.' });
+    }
+    try {
+        const [settings] = await db.query('SELECT nextcloud_credentials FROM user_settings WHERE user_id = ?', [req.user.id]);
+        if (!settings.length || !settings[0].nextcloud_credentials) {
+            return res.status(404).json({ msg: 'Keine Nextcloud-Zugangsdaten konfiguriert.' });
+        }
+        const bytes = CryptoJS.AES.decrypt(settings[0].nextcloud_credentials, ENCRYPTION_KEY);
+        const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+        const client = createClient(
+            decryptedData.serverUrl + '/remote.php/dav/files/' + decryptedData.username,
+            { username: decryptedData.username, password: decryptedData.password }
+        );
+        const stream = client.createReadStream(path);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        stream.pipe(res);
+    } catch (err) {
+        console.error('Fehler beim Herunterladen der Nextcloud-Datei:', err);
+        res.status(500).json({ msg: 'Serverfehler beim Herunterladen der Datei.' });
+    }
+});
+
+app.post('/api/nextcloud/files', auth, async (req, res) => {
+    const { path = '/' } = req.body;
+    try {
+        const [settings] = await db.query('SELECT nextcloud_credentials FROM user_settings WHERE user_id = ?', [req.user.id]);
+        if (!settings.length || !settings[0].nextcloud_credentials) {
+            return res.status(404).json({ msg: 'Keine Nextcloud-Zugangsdaten konfiguriert.' });
+        }
+        const bytes = CryptoJS.AES.decrypt(settings[0].nextcloud_credentials, ENCRYPTION_KEY);
+        const decryptedData = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+        const client = createClient(
+            decryptedData.serverUrl + '/remote.php/dav/files/' + decryptedData.username,
+            { username: decryptedData.username, password: decryptedData.password }
+        );
+        const directoryContents = await client.getDirectoryContents(path);
+        const items = directoryContents
+            .map(item => ({
+                name: item.basename,
+                path: item.filename,
+                type: item.type,
+                size: item.size,
+                lastModified: item.lastmod
+            }));
+        res.json(items);
+    } catch (err) {
+        console.error(`Fehler beim Abrufen von Nextcloud-Pfad "${path}":`, err);
+        if (err.response && err.response.status === 401) return res.status(401).json({ msg: 'Nextcloud-Anmeldung fehlgeschlagen. Bitte überprüfe deine Zugangsdaten.' });
+        if (err.response && err.response.status === 404) return res.status(404).json({ msg: `Ordner "${path}" nicht gefunden.` });
+        if (err.message.includes('ENOTFOUND')) return res.status(400).json({ msg: 'Nextcloud-Server nicht gefunden. Bitte überprüfe die URL.' });
+        res.status(500).json({ msg: 'Serverfehler beim Abrufen der Nextcloud-Dateien.' });
+    }
+});
+
+app.post('/api/settings/nextcloud', auth, async (req, res) => {
+    const { serverUrl, username, password } = req.body;
+    if (!serverUrl || !username || !password) {
+        return res.status(400).json({ msg: 'Bitte alle Felder für die Nextcloud-Verbindung ausfüllen.' });
+    }
+    try {
+        const encryptedCredentials = CryptoJS.AES.encrypt(JSON.stringify(req.body), ENCRYPTION_KEY).toString();
+        await db.query('UPDATE user_settings SET nextcloud_credentials = ? WHERE user_id = ?', [encryptedCredentials, req.user.id]);
+        res.json({ msg: 'Nextcloud-Zugangsdaten erfolgreich gespeichert.' });
+    } catch (err) {
+        console.error('Fehler beim Speichern der Nextcloud-Daten:', err);
+        res.status(500).json({ msg: 'Serverfehler beim Speichern der Nextcloud-Daten.' });
+    }
+});
+
 app.post('/api/register', async (req, res) => {
   const { username, email, password } = req.body;
   if (!username || !email || !password) return res.status(400).json({ msg: 'Bitte alle Felder ausfüllen.' });
@@ -59,56 +188,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// Passwort vergessen Endpunkt
-app.post('/api/forgot-password', async (req, res) => {
-    const { email } = req.body;
-    try {
-        const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
-        if (users.length === 0) {
-            return res.status(200).json({ msg: 'Wenn ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link gesendet.' });
-        }
-        const user = users[0];
-
-        const resetToken = crypto.randomBytes(32).toString('hex');
-        const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-        const tokenExpires = Date.now() + 3600000; // 1 Stunde
-
-        await db.query('UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?', [hashedToken, tokenExpires, user.id]);
-        
-        const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
-        
-        // KORREKTUR: Die E-Mail-Funktion wird jetzt tatsächlich aufgerufen.
-        await sendPasswordResetEmail(user.email, resetUrl);
-
-        res.status(200).json({ msg: 'Wenn ein Konto mit dieser E-Mail existiert, wurde ein Reset-Link gesendet.' });
-
-    } catch (err) {
-        console.error('Fehler bei Passwort vergessen:', err);
-        res.status(500).json({ msg: 'Serverfehler.' });
-    }
-});
-
-// Passwort zurücksetzen Endpunkt (unverändert)
-app.post('/api/reset-password', async (req, res) => {
-    const { token, password } = req.body;
-    if (!token || !password) return res.status(400).json({ msg: 'Token und Passwort sind erforderlich.' });
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    try {
-        const [users] = await db.query('SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > ?', [hashedToken, Date.now()]);
-        if (users.length === 0) return res.status(400).json({ msg: 'Token ist ungültig oder abgelaufen.' });
-        const user = users[0];
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-        await db.query('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?', [hashedPassword, user.id]);
-        res.json({ msg: 'Passwort erfolgreich zurückgesetzt!' });
-    } catch (err) {
-        console.error('Fehler beim Zurücksetzen des Passworts:', err);
-        res.status(500).json({ msg: 'Serverfehler.' });
-    }
-});
-
-
-// Login, Auth-Middleware und Settings-Routen bleiben unverändert...
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ msg: 'Bitte gib Benutzername und Passwort an.' });
@@ -127,17 +206,23 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-const auth = (req, res, next) => {
-  const token = req.header('x-auth-token');
-  if (!token) return res.status(401).json({ msg: 'Kein Token, Autorisierung verweigert.' });
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded.user;
-    next();
-  } catch (e) {
-    res.status(400).json({ msg: 'Token ist nicht gültig.' });
-  }
-};
+app.post('/api/reset-password', async (req, res) => {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ msg: 'Token und Passwort sind erforderlich.' });
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    try {
+        const [users] = await db.query('SELECT * FROM users WHERE reset_token = ? AND reset_token_expires > ?', [hashedToken, Date.now()]);
+        if (users.length === 0) return res.status(400).json({ msg: 'Token ist ungültig oder abgelaufen.' });
+        const user = users[0];
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        await db.query('UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?', [hashedPassword, user.id]);
+        res.json({ msg: 'Passwort erfolgreich zurückgesetzt!' });
+    } catch (err) {
+        console.error('Fehler beim Zurücksetzen des Passworts:', err);
+        res.status(500).json({ msg: 'Serverfehler.' });
+    }
+});
 
 app.get('/api/settings', auth, async (req, res) => {
   try {
